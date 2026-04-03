@@ -1,0 +1,22 @@
+# Dependencies
+node_modules/
+
+# Environment variables (contain secrets)
+.env
+
+# Expo
+.expo/
+dist/
+web-build/
+
+# Native build folders
+ios/
+android/
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS
+.DS_Store
+Thumbs.db

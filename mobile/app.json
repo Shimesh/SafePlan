@@ -1,0 +1,64 @@
+{
+  "expo": {
+    "name": "SafeRoute Israel",
+    "slug": "saferoute-israel",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#E8F5E9"
+    },
+    "assetBundlePatterns": ["**/*"],
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.saferoute.israel",
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "SafeRoute Israel needs your location to find the nearest shelter during an emergency.",
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "SafeRoute Israel needs your location in the background to alert you even when the app is minimized.",
+        "UIBackgroundModes": ["location", "fetch"]
+      },
+      "config": {
+        "googleMapsApiKey": "$(EXPO_PUBLIC_GOOGLE_MAPS_KEY)"
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#E8F5E9"
+      },
+      "package": "com.saferoute.israel",
+      "permissions": [
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_BACKGROUND_LOCATION",
+        "FOREGROUND_SERVICE",
+        "VIBRATE",
+        "RECEIVE_BOOT_COMPLETED"
+      ],
+      "config": {
+        "googleMaps": {
+          "apiKey": "$(EXPO_PUBLIC_GOOGLE_MAPS_KEY)"
+        }
+      }
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "SafeRoute Israel uses your location to find the nearest shelter during a missile alert."
+        }
+      ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "your-eas-project-id"
+      }
+    }
+  }
+}
