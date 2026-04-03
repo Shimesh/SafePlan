@@ -13,7 +13,8 @@
     },
     "startButton": "Start Drive",
     "notReady": "Please complete at least 4 items",
-    "allGood": "Ready! Stay safe."
+    "readyMinimum": "Minimum met! You can start driving.",
+    "allGood": "Fully ready! Stay safe."
   },
   "map": {
     "searchPlaceholder": "Where are you going?",

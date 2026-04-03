@@ -174,11 +174,11 @@ export default function ChecklistScreen({ navigation }: Props) {
       </ScrollView>
 
       {/* Status message */}
-      <Text style={[styles.statusText, allDone && styles.statusTextGood]}>
+      <Text style={[styles.statusText, canStart && styles.statusTextGood]}>
         {allDone
           ? t('checklist.allGood')
           : canStart
-          ? t('checklist.allGood')  // show positive once threshold met
+          ? t('checklist.readyMinimum')  // 4-5 items checked — ready but not complete
           : t('checklist.notReady')}
       </Text>
 

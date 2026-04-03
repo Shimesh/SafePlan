@@ -195,21 +195,34 @@ function stopPolling() {
 
 /**
  * Inject a mock alert directly (for testing / demo without real API).
+ * Bypasses processAndEmitAlert() and emits the payload directly so that
+ * the caller-supplied threatOrigin and timeToImpact are honoured exactly.
  *
  * @param {object} io
- * @param {string} threatOrigin – e.g. 'Iran'
- * @param {number} timeToImpact – seconds
+ * @param {string} threatOrigin – e.g. 'Iran', 'Gaza', 'Yemen'
+ * @param {number} timeToImpact – seconds until impact
  */
 function injectMockAlert(io, threatOrigin = 'Iran', timeToImpact = 90) {
-  const mockRaw = {
-    id:    `mock-${Date.now()}`,
-    cat:   4, // Iran category
-    title: 'ירי רקטות ופגזים',
-    data:  ['שרון', 'גוש דן'],
+  const id = `mock-${Date.now()}`;
+
+  const alertPayload = {
+    id,
+    title:        'ירי רקטות ופגזים',
+    threatOrigin, // use caller value directly — not a cat→name lookup
+    regions:      ['שרון', 'גוש דן'],
+    timeToImpact, // use caller value directly — not a region-based lookup
+    category:     4,
+    timestamp:    new Date().toISOString(),
   };
-  // Override last ID so it's always treated as new
-  _lastAlertId = null;
-  processAndEmitAlert({ ...mockRaw, _resolvedOrigin: threatOrigin, _resolvedTTI: timeToImpact }, io);
+
+  console.log(
+    `[pikudHaoref] 🚨 MOCK ALERT: ${threatOrigin} | timeToImpact: ${timeToImpact}s`
+  );
+
+  // Reset dedup state so the next real alert is never suppressed
+  _lastAlertId = id;
+
+  io.emit('alert', alertPayload);
 }
 
 module.exports = { startPolling, stopPolling, injectMockAlert, fetchCurrentAlert };

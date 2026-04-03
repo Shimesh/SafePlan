@@ -64,7 +64,8 @@ i18n
     interpolation: {
       escapeValue: false,         // React handles XSS escaping
     },
-    compatibilityJSON: 'v4',
+    // compatibilityJSON is intentionally omitted: our locale files are plain
+    // nested objects which i18next v23 handles natively without any compat shim.
   });
 
 export default i18n;

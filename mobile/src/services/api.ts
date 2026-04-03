@@ -11,12 +11,22 @@ import Constants from 'expo-constants';
 import type { Shelter, Alert } from '../types';
 
 // ─── Base URL ──────────────────────────────────────────────────────────────
-// In development: http://localhost:3001
-// In production:  set EXPO_PUBLIC_BACKEND_URL to your deployed backend URL
-const BASE_URL =
+// Priority: app.json extras → EXPO_PUBLIC_BACKEND_URL env var → localhost fallback
+// In production EXPO_PUBLIC_BACKEND_URL must be set; the localhost fallback
+// will only work when the backend runs on the same machine as the dev client.
+const CONFIGURED_URL =
   (Constants.expoConfig?.extra as Record<string, string>)?.backendUrl ??
-  process.env.EXPO_PUBLIC_BACKEND_URL ??
-  'http://localhost:3001';
+  process.env.EXPO_PUBLIC_BACKEND_URL;
+
+if (!CONFIGURED_URL) {
+  console.warn(
+    '[api] EXPO_PUBLIC_BACKEND_URL is not set. ' +
+    'Falling back to http://localhost:3001 — this will NOT work on a physical device. ' +
+    'Set EXPO_PUBLIC_BACKEND_URL=http://<your-lan-ip>:3001 in mobile/.env'
+  );
+}
+
+const BASE_URL = CONFIGURED_URL ?? 'http://localhost:3001';
 
 export const apiClient = axios.create({
   baseURL: BASE_URL,

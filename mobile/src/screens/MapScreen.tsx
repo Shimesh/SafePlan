@@ -97,7 +97,10 @@ export default function MapScreen() {
   useEffect(() => {
     fetchShelters();
     startGPSTracking();
-    connectSocket();
+
+    // Connect socket and register alert handler
+    const socket = socketService.connect();
+    socket.on('alert', handleAlert);
 
     // If running in mock mode, trigger emergency after 60 s
     let cancelMock: (() => void) | undefined;
@@ -106,11 +109,14 @@ export default function MapScreen() {
     }
 
     return () => {
+      // Always deregister the listener before disconnecting to prevent
+      // duplicate alert handlers if the component remounts
+      socket.off('alert', handleAlert);
       locationSubscription.current?.remove();
       socketService.disconnect();
       cancelMock?.();
     };
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [handleAlert]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ─────────────────────────────────────────────────────────────────────────
   // GPS tracking
@@ -147,22 +153,24 @@ export default function MapScreen() {
   };
 
   // ─────────────────────────────────────────────────────────────────────────
-  // Socket.io
-  // ─────────────────────────────────────────────────────────────────────────
-  const connectSocket = () => {
-    const socket = socketService.connect();
-    socket.on('alert', handleAlert);
-  };
-
-  // ─────────────────────────────────────────────────────────────────────────
   // Emergency handler – core auto-reroute logic
   // ─────────────────────────────────────────────────────────────────────────
-  const handleAlert = useCallback(async (alert: AlertType) => {
+  const handleAlert = useCallback(async (alert: AlertType, _attempt = 0) => {
+    // Always read from store (not hook closure) to get the latest GPS position
     const pos = useNavigationStore.getState().currentLocation;
     const allShelters = useShelterStore.getState().shelters;
 
+    // If GPS or shelters are not yet ready, retry up to 3 times with 1s delay.
+    // This handles the race where an alert arrives before the first GPS fix.
     if (!pos || allShelters.length === 0) {
-      console.warn('[MapScreen] Cannot reroute: no location or shelters.');
+      if (_attempt < 3) {
+        console.warn(
+          `[MapScreen] Alert received but GPS/shelters not ready (attempt ${_attempt + 1}/3). Retrying in 1s…`
+        );
+        setTimeout(() => handleAlert(alert, _attempt + 1), 1000);
+      } else {
+        console.error('[MapScreen] Alert dropped: GPS/shelters unavailable after 3 retries.');
+      }
       return;
     }
 
