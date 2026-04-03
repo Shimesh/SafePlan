@@ -1,0 +1,61 @@
+{
+  "checklist": {
+    "title": "צ'ק-ליסט לפני יציאה",
+    "subtitle": "קח רגע לוודא שאתה מוכן. ארבעה סעיפים לפחות נדרשים.",
+    "progress": "{{done}} מתוך {{total}} הושלמו",
+    "items": {
+      "phone": "הטלפון טעון לפחות 80%",
+      "shoes": "נועל נעלי ריצה / נעליים סגורות",
+      "kids": "הסברת לילדים את הנוהל",
+      "water": "בקבוק מים בתיק",
+      "meds": "תרופות הכרחיות זמינות",
+      "docs": "מסמכים חשובים / ת\"ז"
+    },
+    "startButton": "התחל נסיעה",
+    "notReady": "נא להשלים לפחות 4 סעיפים",
+    "allGood": "מוכן! בהצלחה ובטחון."
+  },
+  "map": {
+    "searchPlaceholder": "לאן נוסעים?",
+    "searchButton": "חפש מסלול",
+    "sheltersNearby": "מקלטים בדרך",
+    "shelterCount": "{{count}} מקלטים נמצאו",
+    "rerouting": "מנווט למקלט...",
+    "loadingShelters": "טוען מקלטים...",
+    "noShelters": "לא נמצאו מקלטים בסביבה",
+    "myLocation": "המיקום שלי",
+    "destination": "יעד",
+    "eta": "זמן הגעה: {{minutes}} דק'",
+    "distance": "{{km}} ק\"מ",
+    "capacity": "קיבולת: {{n}} אנשים"
+  },
+  "emergency": {
+    "banner": "🚨 אזעקה פעילה!",
+    "threat": "איום מ-{{origin}}",
+    "impact": "זמן עד פגיעה: {{seconds}} שניות",
+    "shelterEta": "מקלט קרוב: {{minutes}} דק'",
+    "reroutingTo": "מנווט מחדש אל: {{name}}",
+    "dismiss": "ביטול (לא מומלץ)",
+    "callEmergency": "112"
+  },
+  "settings": {
+    "title": "הגדרות",
+    "language": "שפה",
+    "mockMode": "מצב הדגמה",
+    "mockModeDesc": "הפעל אזעקה מדומה לאחר 60 שניות",
+    "about": "אודות SafeRoute Israel"
+  },
+  "languages": {
+    "he": "עברית",
+    "en": "English",
+    "ru": "Русский",
+    "ar": "العربية"
+  },
+  "common": {
+    "loading": "טוען...",
+    "error": "שגיאה",
+    "retry": "נסה שוב",
+    "cancel": "ביטול",
+    "ok": "אישור"
+  }
+}

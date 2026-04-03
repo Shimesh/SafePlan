@@ -1,0 +1,61 @@
+{
+  "checklist": {
+    "title": "Pre-Departure Checklist",
+    "subtitle": "Take a moment to prepare. At least 4 items are required.",
+    "progress": "{{done}} of {{total}} completed",
+    "items": {
+      "phone": "Phone charged to at least 80%",
+      "shoes": "Wearing running / closed shoes",
+      "kids": "Briefed the kids on the procedure",
+      "water": "Water bottle in bag",
+      "meds": "Essential medications available",
+      "docs": "ID / important documents"
+    },
+    "startButton": "Start Drive",
+    "notReady": "Please complete at least 4 items",
+    "allGood": "Ready! Stay safe."
+  },
+  "map": {
+    "searchPlaceholder": "Where are you going?",
+    "searchButton": "Find Route",
+    "sheltersNearby": "Shelters Along Route",
+    "shelterCount": "{{count}} shelters found",
+    "rerouting": "Rerouting to shelter...",
+    "loadingShelters": "Loading shelters...",
+    "noShelters": "No shelters found nearby",
+    "myLocation": "My Location",
+    "destination": "Destination",
+    "eta": "ETA: {{minutes}} min",
+    "distance": "{{km}} km",
+    "capacity": "Capacity: {{n}} people"
+  },
+  "emergency": {
+    "banner": "🚨 ACTIVE ALERT!",
+    "threat": "Threat from {{origin}}",
+    "impact": "Time to impact: {{seconds}} seconds",
+    "shelterEta": "Nearest shelter: {{minutes}} min",
+    "reroutingTo": "Rerouting to: {{name}}",
+    "dismiss": "Dismiss (not recommended)",
+    "callEmergency": "911 / 112"
+  },
+  "settings": {
+    "title": "Settings",
+    "language": "Language",
+    "mockMode": "Demo Mode",
+    "mockModeDesc": "Trigger a mock alert after 60 seconds",
+    "about": "About SafeRoute Israel"
+  },
+  "languages": {
+    "he": "עברית",
+    "en": "English",
+    "ru": "Русский",
+    "ar": "العربية"
+  },
+  "common": {
+    "loading": "Loading...",
+    "error": "Error",
+    "retry": "Retry",
+    "cancel": "Cancel",
+    "ok": "OK"
+  }
+}
