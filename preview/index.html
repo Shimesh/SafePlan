@@ -202,6 +202,18 @@
     .sh-badge.m{background:#1565C0;} .sh-badge.p{background:#6A1B9A;}
     .sh-cap{font-size:10px;color:#78909C;font-weight:500;}
 
+    /* GPS/Sim banner */
+    #simBanner{position:absolute;top:0;left:0;right:0;z-index:800;
+      background:#E65100;color:#fff;font-size:11px;font-weight:700;
+      text-align:center;padding:4px 10px;display:none;}
+    /* Nav bar emergency mode */
+    #navBar.em-mode{background:#B71C1C;}
+    /* GPS dot */
+    #gpsDot.active{color:#69F0AE;}
+    #gpsDot.sim{color:#FF9800;}
+    /* Shelter ETA chip */
+    .sh-eta{font-size:10px;color:#2E7D32;font-weight:700;margin-right:auto;}
+
     /* Leaflet pin styles */
     .user-ring{background:rgba(21,101,192,.18);border-radius:50%;width:44px;height:44px;display:flex;align-items:center;justify-content:center;}
     .user-dot{background:#1565C0;border-radius:50%;width:16px;height:16px;border:3px solid #fff;box-shadow:0 2px 8px rgba(21,101,192,.6);}
@@ -217,10 +229,14 @@
 <body>
 <div id="frameWrap">
 <div id="frame">
+  <div id="simBanner"></div>
   <div id="statusBar">
     <span id="stTime">9:41</span>
     <span>SafeRoute 🇮🇱</span>
-    <span id="stConn">●●●</span>
+    <span style="display:flex;align-items:center;gap:5px;">
+      <span id="gpsDot" title="GPS" style="font-size:10px;color:#78909C;">📍</span>
+      <span id="stConn">●●●</span>
+    </span>
   </div>
 
   <!-- ══ CHECKLIST ══ -->
@@ -254,12 +270,19 @@
 
     <!-- Navigation instruction bar (shown during active route) -->
     <div id="navBar">
-      <div id="navArrow">➡️</div>
+      <div id="navArrow">⬆</div>
       <div id="navInfo">
         <div id="navStep">מחשב מסלול…</div>
         <div id="navDist"></div>
       </div>
-      <div id="navEta"></div>
+      <div style="display:flex;flex-direction:column;align-items:flex-end;gap:2px;flex-shrink:0;">
+        <div id="navEta"></div>
+        <div id="navTotal" style="font-size:10px;color:#90A4AE;"></div>
+      </div>
+    </div>
+    <div id="navProgress" style="position:absolute;top:102px;left:10px;right:10px;z-index:589;
+      height:3px;background:rgba(255,255,255,.15);border-radius:2px;display:none;">
+      <div id="navProgressFill" style="height:100%;background:#69F0AE;border-radius:2px;width:0%;transition:width .5s;"></div>
     </div>
 
     <!-- Emergency banner -->
@@ -309,7 +332,10 @@
       <div class="sh-handle"></div>
       <div class="sh-hdr">
         <span class="sh-htitle" id="shTitle">מקלטים בדרך</span>
-        <span class="sh-hcount" id="shCount"></span>
+        <div style="display:flex;flex-direction:column;align-items:flex-end;">
+          <span class="sh-hcount" id="shCount"></span>
+          <span id="shRouteNote" style="font-size:10px;color:#1565C0;font-weight:600;display:none;">📍 לאורך המסלול</span>
+        </div>
       </div>
       <div id="shCards"></div>
     </div>
@@ -318,14 +344,11 @@
 </div>
 
 <script>
-// ─── RESPONSIVE SCALING ────────────────────────────────────────────────────
+// ─── RESPONSIVE SCALING ───────────────────────────────────────────────────
 function fitFrame() {
   const frame = document.getElementById('frame');
-  const FRAME_W = 390, FRAME_H = 844;
-  const PAD = 16;
-  const scaleX = (window.innerWidth  - PAD * 2) / FRAME_W;
-  const scaleY = (window.innerHeight - PAD * 2) / FRAME_H;
-  const scale  = Math.min(1, scaleX, scaleY);
+  const FRAME_W = 390, FRAME_H = 844, PAD = 16;
+  const scale = Math.min(1,(window.innerWidth-PAD*2)/FRAME_W,(window.innerHeight-PAD*2)/FRAME_H);
   frame.style.transform = `scale(${scale})`;
   const marginH = -((FRAME_H * (1 - scale)) / 2);
   const marginW = -((FRAME_W * (1 - scale)) / 2);
@@ -560,27 +583,66 @@ function updateChecklistUI() {
 renderChecklist(); updateChecklistUI();
 buildLangMenu();
 
-// ─── MAP ──────────────────────────────────────────────────────────────────
+// ─── MAP + GPS ────────────────────────────────────────────────────────────
 let map=null, userMarker=null, routeLayer=null, emMarker=null, destMarker=null, shelterLayers=[];
-let mapReady=false, isSatellite=false;
+let mapReady=false, isSatellite=false, isSimMode=false;
 let streetLayer, satLayer;
-const USER_POS = [32.0956, 34.9574]; // Rosh HaAyin (simulated)
+const USER_POS = [32.0956, 34.9574]; // Rosh HaAyin fallback
+
+// ─── GPS / GEOLOCATION ────────────────────────────────────────────────────
+let currentPos = null;
+let gpsWatchId = null;
+
+function initGeolocation() {
+  if (!('geolocation' in navigator)) { activateSimMode(); return; }
+  navigator.geolocation.getCurrentPosition(
+    pos => {
+      setCurrentPos([pos.coords.latitude, pos.coords.longitude], true);
+      gpsWatchId = navigator.geolocation.watchPosition(
+        p => setCurrentPos([p.coords.latitude, p.coords.longitude], true),
+        null, { enableHighAccuracy:true, maximumAge:5000, timeout:10000 }
+      );
+    },
+    () => activateSimMode(),
+    { enableHighAccuracy:true, timeout:8000, maximumAge:0 }
+  );
+}
+
+function setCurrentPos(coord, isReal) {
+  const wasNull = !currentPos;
+  currentPos = coord;
+  if (userMarker) userMarker.setLatLng(coord);
+  if (wasNull && map) { map.setView(coord, 14, {animate:true}); loadShelters(); }
+  if (isReal) {
+    const dot = document.getElementById('gpsDot');
+    dot.textContent = '📍'; dot.className = 'active'; dot.title = 'GPS פעיל';
+  }
+}
+
+function activateSimMode() {
+  isSimMode = true;
+  currentPos = [...USER_POS];
+  const dot = document.getElementById('gpsDot');
+  dot.textContent = '🔶'; dot.className = 'sim'; dot.title = 'סימולציה';
+  const b = document.getElementById('simBanner');
+  b.textContent = '⚠ מצב סימולציה — GPS לא זמין';
+  b.style.display = 'block';
+  setTimeout(() => { b.style.display='none'; }, 4000);
+}
 
 function initMap() {
   if (mapReady) return;
   mapReady = true;
-
   map = L.map('map',{zoomControl:false,attributionControl:false}).setView(USER_POS,14);
   streetLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19}).addTo(map);
-  satLayer    = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{maxZoom:19});
+  satLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{maxZoom:19});
   L.control.zoom({position:'bottomright'}).addTo(map);
-
   const userIcon = L.divIcon({
     html:'<div class="user-ring"><div class="user-dot"></div></div>',
     className:'',iconSize:[44,44],iconAnchor:[22,22],
   });
   userMarker = L.marker(USER_POS,{icon:userIcon,zIndexOffset:1000}).addTo(map);
-
+  initGeolocation();
   loadShelters();
   connectSocket();
 }
@@ -591,9 +653,29 @@ function toggleLayer() {
   else             { map.removeLayer(satLayer); streetLayer.addTo(map); }
   document.getElementById('layerBtn').classList.toggle('active', isSatellite);
 }
-
 function goToUser() {
-  if (map) map.setView(currentPos || USER_POS, 15, {animate:true});
+  if (map) map.setView(currentPos || USER_POS, 16, {animate:true});
+}
+
+// ─── HAVERSINE (client-side) ──────────────────────────────────────────────
+function haversineM(lat1,lon1,lat2,lon2) {
+  const R=6371000,dLat=(lat2-lat1)*Math.PI/180,dLon=(lon2-lon1)*Math.PI/180;
+  const a=Math.sin(dLat/2)**2+Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLon/2)**2;
+  return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
+}
+
+function sheltersNearRoute(routeCoords, allShelters, thresholdM=2000) {
+  return allShelters.filter(s => {
+    for (let i=0;i<routeCoords.length-1;i++) {
+      const [ax,ay]=[routeCoords[i][0],routeCoords[i][1]];
+      const [bx,by]=[routeCoords[i+1][0],routeCoords[i+1][1]];
+      const dx=bx-ax,dy=by-ay;
+      let tt=dx||dy ? ((s.lat-ax)*dx+(s.lng-ay)*dy)/(dx*dx+dy*dy) : 0;
+      tt=Math.max(0,Math.min(1,tt));
+      if (haversineM(s.lat,s.lng,ax+tt*dx,ay+tt*dy)<=thresholdM) return true;
+    }
+    return false;
+  });
 }
 
 // ─── AUTOCOMPLETE + NOMINATIM GEOCODING ───────────────────────────────────
@@ -670,7 +752,7 @@ function renderAC(presets, geoResults) {
     typeSpan.textContent = item.isGeo ? '📍' : '🏙';
     el.appendChild(nameSpan);
     el.appendChild(typeSpan);
-    el.addEventListener('mousedown', e => { e.preventDefault(); selectPlace(item); });
+    el.addEventListener('pointerdown', e => { e.preventDefault(); selectPlace(item); });
     box.appendChild(el);
   });
   box.style.display = 'block';
@@ -754,71 +836,70 @@ async function osrmRoute(from, to, withSteps = false) {
 }
 
 // ─── NAV SIMULATION ───────────────────────────────────────────────────────
-let currentPos = null;   // live simulated position [lat,lng]
-let navInterval = null;
-let navCoords = [];
-let navSteps = [];
-let navCoordIdx = 0;
-let navStepIdx = 0;
-let navTotalDist = 0;
-let savedRoute = null;   // route to restore if user rejects shelter
+let navInterval=null, navCoords=[], navSteps=[];
+let navCoordIdx=0, navStepIdx=0, navTotalDist=0, navTotalDuration=0;
+let savedRoute=null;
 
-function startNav(result, destName) {
+function startNav(result, destName, isEmergency=false) {
   stopNav();
-  navCoords = result.coords;
-  navSteps  = result.steps;
-  navCoordIdx = 0;
-  navStepIdx  = 0;
-  navTotalDist = result.distance;
-  currentPos = navCoords[0];
+  navCoords=result.coords; navSteps=result.steps;
+  navCoordIdx=0; navStepIdx=0;
+  navTotalDist=result.distance; navTotalDuration=result.duration;
 
-  document.getElementById('navBar').classList.add('on');
+  const bar=document.getElementById('navBar');
+  bar.classList.add('on');
+  if (isEmergency) bar.classList.add('em-mode'); else bar.classList.remove('em-mode');
+  document.getElementById('navProgress').style.display='block';
+  document.getElementById('navProgressFill').style.width='0%';
+  document.getElementById('navTotal').textContent=
+    formatDist(navTotalDist)+' · '+Math.ceil(navTotalDuration/60)+' '+t.min;
   updateNavBar();
 
-  // Advance the dot along the route every 1.2s (compressed simulation)
-  navInterval = setInterval(() => {
+  navInterval=setInterval(()=>{
     navCoordIdx++;
-    if (navCoordIdx >= navCoords.length) {
+    if (navCoordIdx>=navCoords.length) {
       stopNav();
-      document.getElementById('navStep').textContent = t.navArrived;
-      document.getElementById('navArrow').textContent = '🏁';
-      document.getElementById('navDist').textContent = '';
-      document.getElementById('navEta').textContent = '';
+      document.getElementById('navArrow').textContent='🏁';
+      document.getElementById('navStep').textContent=t.navArrived;
+      document.getElementById('navDist').textContent='';
+      document.getElementById('navEta').textContent='';
+      document.getElementById('navTotal').textContent='';
       return;
     }
-    currentPos = navCoords[navCoordIdx];
-    userMarker.setLatLng(currentPos);
-
-    // Advance step when ~70% through current step's coords
-    if (navSteps.length > navStepIdx + 1) {
-      const progress = navCoordIdx / navCoords.length;
-      let stepsProgress = 0;
-      for (let i = 0; i <= navStepIdx; i++) {
-        stepsProgress += (navSteps[i]?.distance || 0) / navTotalDist;
-      }
-      if (progress > stepsProgress) navStepIdx++;
+    // Move simulated dot (only if sim mode or no real GPS)
+    if (isSimMode||!gpsWatchId) {
+      currentPos=navCoords[navCoordIdx];
+      if (userMarker) userMarker.setLatLng(currentPos);
+    }
+    // Advance step index
+    const progress=navCoordIdx/navCoords.length;
+    let cum=0;
+    for (let i=0;i<navSteps.length;i++) {
+      cum+=(navSteps[i]?.distance||0)/navTotalDist;
+      if (progress<=cum) { navStepIdx=i; break; }
     }
     updateNavBar();
+    // Refresh nearby shelters every ~15% progress
+    if (navCoordIdx%Math.max(1,Math.floor(navCoords.length/7))===0) loadShelters(false);
   }, 1200);
 }
 
 function updateNavBar() {
-  const step = navSteps[navStepIdx];
-  const remaining = navCoords.length > 0
-    ? Math.max(0, navTotalDist * (1 - navCoordIdx / navCoords.length))
-    : 0;
-  const etaMins = Math.ceil(remaining / (40000 / 60)); // ~40 km/h → m/min
-
-  document.getElementById('navArrow').textContent = getArrow(step);
-  document.getElementById('navStep').textContent  = step?.name || (lang === 'he' ? 'המשך ישר' : 'Continue');
-  document.getElementById('navDist').textContent  = formatDist(step?.distance || remaining);
-  document.getElementById('navEta').textContent   = etaMins > 0 ? t.eta + etaMins + ' ' + t.min : '';
+  const step=navSteps[navStepIdx];
+  const progress=navCoordIdx/Math.max(1,navCoords.length);
+  const remDist=Math.max(0,navTotalDist*(1-progress));
+  const remSecs=Math.max(0,navTotalDuration*(1-progress));
+  document.getElementById('navArrow').textContent=getArrow(step);
+  document.getElementById('navStep').textContent=step?.name||(lang==='he'?'המשך ישר':'Continue');
+  document.getElementById('navDist').textContent=step?.distance?formatDist(step.distance):formatDist(remDist);
+  document.getElementById('navEta').textContent=remSecs>10?(t.eta+Math.ceil(remSecs/60)+' '+t.min):'';
+  document.getElementById('navProgressFill').style.width=(progress*100)+'%';
 }
 
 function stopNav() {
-  clearInterval(navInterval);
-  navInterval = null;
-  document.getElementById('navBar').classList.remove('on');
+  clearInterval(navInterval); navInterval=null;
+  document.getElementById('navBar').classList.remove('on','em-mode');
+  document.getElementById('navProgress').style.display='none';
 }
 
 // ─── ROUTE TO DESTINATION ─────────────────────────────────────────────────
@@ -836,80 +917,113 @@ async function routeTo(dest, destName) {
   document.getElementById('searchBtn').disabled = false;
 
   const label = destName || document.getElementById('searchInput').value || '';
-  savedRoute = { coords: (result?.coords || [from, dest]), dest, label };
+  savedRoute = { coords:(result?.coords||[from,dest]), dest, label };
 
   if (result) {
-    routeLayer = L.polyline(result.coords, {color:'#1565C0',weight:5,opacity:.88}).addTo(map);
-
-    // Destination marker
-    const di = L.divIcon({html:'<div class="dest-pin">📍</div>',className:'',iconSize:[32,32],iconAnchor:[16,16]});
+    routeLayer = L.polyline(result.coords,{color:'#1565C0',weight:5,opacity:.88}).addTo(map);
+    const di = L.divIcon({html:'<div class="dest-pin">📍</div>',className:'',iconSize:[32,32],iconAnchor:[16,32]});
     destMarker = L.marker(dest,{icon:di}).addTo(map);
-    if (label) destMarker.bindPopup('<b>'+label+'</b>').openPopup();
-
+    if (label) destMarker.bindPopup(
+      '<b>'+label+'</b><br>'+formatDist(result.distance)+' · '+Math.ceil(result.duration/60)+' '+t.min
+    ).openPopup();
     map.fitBounds(routeLayer.getBounds(),{padding:[80,60]});
-    startNav(result, label);
+    startNav(result, label, false);
+    // Show shelters along route
+    loadSheltersAlongRoute(result.coords);
   } else {
-    routeLayer = L.polyline([from, dest],{color:'#1565C0',weight:4,opacity:.7,dashArray:'8 6'}).addTo(map);
+    routeLayer = L.polyline([from,dest],{color:'#1565C0',weight:4,opacity:.7,dashArray:'8 6'}).addTo(map);
     map.fitBounds(routeLayer.getBounds(),{padding:[80,60]});
-    document.getElementById('slWarn').style.display = 'block';
+    document.getElementById('slWarn').style.display='block';
+    loadShelters();
   }
 }
 
 // ─── SHELTERS ─────────────────────────────────────────────────────────────
-let sheltersData = [];
+let sheltersData=[], allSheltersCache=[];
 
-async function loadShelters() {
+async function loadShelters(updateUI=true) {
   try {
-    const pos = currentPos || USER_POS;
-    const r = await fetch(`${API}/api/shelters/nearest?lat=${pos[0]}&lng=${pos[1]}&limit=10`);
-    const d = await r.json();
-    sheltersData = d.shelters || [];
-    renderShelterCards(sheltersData);
-    placeShelterMarkers(sheltersData, null);
-    document.getElementById('shCount').textContent = sheltersData.length+' '+t.sheltersFound;
+    const pos=currentPos||USER_POS;
+    const r=await fetch(`${API}/api/shelters/nearest?lat=${pos[0]}&lng=${pos[1]}&limit=20`);
+    const d=await r.json();
+    allSheltersCache=d.shelters||[];
+    sheltersData=allSheltersCache.slice(0,10);
+    if (updateUI) {
+      renderShelterCards(sheltersData);
+      placeShelterMarkers(sheltersData,null);
+      document.getElementById('shCount').textContent=sheltersData.length+' '+t.sheltersFound;
+      document.getElementById('shTitle').textContent=t.shTitle;
+      document.getElementById('shRouteNote').style.display='none';
+    }
   } catch(e) {}
 }
 
+async function loadSheltersAlongRoute(routeCoords) {
+  if (!allSheltersCache.length) await loadShelters(false);
+  const along=sheltersNearRoute(routeCoords,allSheltersCache,2000);
+  if (!along.length) { loadShelters(); return; }
+  const pos=currentPos||USER_POS;
+  along.sort((a,b)=>haversineM(pos[0],pos[1],a.lat,a.lng)-haversineM(pos[0],pos[1],b.lat,b.lng));
+  along.forEach(s=>{ s.distanceMeters=haversineM(pos[0],pos[1],s.lat,s.lng); });
+  sheltersData=along;
+  renderShelterCards(sheltersData);
+  placeShelterMarkers(sheltersData,null);
+  document.getElementById('shCount').textContent=sheltersData.length+' '+t.sheltersFound;
+  document.getElementById('shTitle').textContent=t.shTitle;
+  document.getElementById('shRouteNote').style.display='block';
+}
+
 function placeShelterMarkers(list, nearestId) {
-  shelterLayers.forEach(m => map.removeLayer(m));
-  shelterLayers = [];
-  list.forEach(s => {
-    const em = (s.id === nearestId);
-    const icon = L.divIcon({
-      html:`<div class="sh-pin${em?' em':''}">${em?'🎯':'🛡'}</div>`,
+  shelterLayers.forEach(m=>map.removeLayer(m)); shelterLayers=[];
+  const pos=currentPos||USER_POS;
+  list.forEach((s,idx)=>{
+    const em=(s.id===nearestId);
+    const icon=L.divIcon({
+      html:`<div class="sh-pin${em?' em':''}">${em?'🎯':(idx+1)}</div>`,
       className:'',iconSize:[30,30],iconAnchor:[15,15],
     });
-    const m = L.marker([s.lat,s.lng],{icon}).addTo(map);
-    m.bindPopup(`<b>${s.name}</b><br>${s.address||''}<br>${s.capacity?t.capacity+' '+s.capacity+' אנשים':''}`);
+    const m=L.marker([s.lat,s.lng],{icon}).addTo(map);
+    const dm=s.distanceMeters??haversineM(pos[0],pos[1],s.lat,s.lng);
+    const distStr=dm<1000?Math.round(dm)+' מ׳':(dm/1000).toFixed(1)+' ק"מ';
+    const etaMins=Math.ceil((dm<500?dm/83:dm/666)/60);
+    m.bindPopup(
+      `<b>${s.name}</b>`+
+      (s.address?`<br>${s.address}`:'')+
+      `<br>📏 ${distStr} · 🕐 ~${etaMins} ${t.min}`+
+      (s.capacity?`<br>👥 ${t.capacity} ${s.capacity}`:'')
+    );
     if (em) m.openPopup();
     shelterLayers.push(m);
   });
 }
 
 function renderShelterCards(list) {
-  const box = document.getElementById('shCards');
-  box.textContent = '';
-  document.getElementById('shTitle').textContent = t.shTitle;
-  document.getElementById('shCount').textContent = list.length+' '+t.sheltersFound;
-  list.forEach((s,i) => {
-    const card = document.createElement('div');
-    card.className = 'sh-card'+(i===0?' nearest':'');
-    const icon = document.createElement('div'); icon.className='sh-icon'; icon.textContent='🛡️';
-    const info = document.createElement('div'); info.className='sh-info';
-    const name = document.createElement('div'); name.className='sh-name'; name.textContent=s.name;
-    const dist = document.createElement('div'); dist.className='sh-dist';
-    const dm = s.distanceMeters;
-    dist.textContent = dm!=null ? (dm<1000?Math.round(dm)+' מ׳':(dm/1000).toFixed(1)+' ק"מ') : '';
-    const badge = document.createElement('div');
+  const box=document.getElementById('shCards'); box.textContent='';
+  const pos=currentPos||USER_POS;
+  list.forEach((s,i)=>{
+    const card=document.createElement('div');
+    card.className='sh-card'+(i===0?' nearest':'');
+    const icon=document.createElement('div'); icon.className='sh-icon'; icon.textContent=i===0?'🛡️':'🛡';
+    const info=document.createElement('div'); info.className='sh-info';
+    const name=document.createElement('div'); name.className='sh-name'; name.textContent=s.name;
+    const dist=document.createElement('div'); dist.className='sh-dist';
+    const dm=s.distanceMeters??haversineM(pos[0],pos[1],s.lat,s.lng);
+    dist.textContent=dm<1000?Math.round(dm)+' מ׳':(dm/1000).toFixed(1)+' ק"מ';
+    const etaSecs=dm<500?dm/83:dm/666;
+    const etaEl=document.createElement('span'); etaEl.className='sh-eta';
+    etaEl.textContent='🕐 '+Math.ceil(etaSecs/60)+' '+t.min;
+    const badge=document.createElement('div');
     badge.className='sh-badge'+(s.type==='municipal'?' m':s.type==='private'?' p':'');
-    badge.textContent = s.type==='municipal'?t.municipal:s.type==='private'?t.private:t.public;
-    const cap = document.createElement('div'); cap.className='sh-cap';
-    if (s.capacity) cap.textContent = t.capacity+' '+s.capacity;
-    const row = document.createElement('div'); row.className='sh-row';
-    row.append(badge, cap);
-    info.append(name, dist, row);
+    badge.textContent=s.type==='municipal'?t.municipal:s.type==='private'?t.private:t.public;
+    const cap=document.createElement('div'); cap.className='sh-cap';
+    if (s.capacity) cap.textContent=t.capacity+' '+s.capacity;
+    const row=document.createElement('div'); row.className='sh-row';
+    row.append(badge,cap,etaEl);
+    info.append(name,dist,row);
     card.append(icon,info);
-    card.addEventListener('click',()=>{ if(map) map.setView([s.lat,s.lng],16); });
+    card.addEventListener('click',()=>{
+      if(map){ map.setView([s.lat,s.lng],17); shelterLayers[i]?.openPopup(); }
+    });
     box.appendChild(card);
   });
 }
@@ -936,9 +1050,9 @@ async function showAlert(data) {
 
   cdTick(); cdInterval = setInterval(cdTick, 1000);
 
-  // Fetch nearest shelter then show confirmation popup
+  // Fetch nearest shelter from current real position
   try {
-    const r = await fetch(API+'/api/shelters/nearest?lat='+(currentPos||USER_POS)[0]+'&lng='+(currentPos||USER_POS)[1]+'&limit=1');
+    const r = await fetch(API+'/api/shelters/nearest?lat='+(currentPos||USER_POS)[0]+'&lng='+(currentPos||USER_POS)[1]+'&limit=3');
     const d = await r.json();
     const s = d.shelters?.[0];
     if (s) {
@@ -949,7 +1063,8 @@ async function showAlert(data) {
       document.getElementById('spSub').textContent = t.spSub;
       document.getElementById('spYes').textContent = t.spYes;
       document.getElementById('spShName').textContent = s.name;
-      document.getElementById('spShDist').textContent = distStr;
+      const etaMins=dm?Math.ceil((dm<500?dm/83:dm/666)/60):null;
+      document.getElementById('spShDist').textContent = distStr+(etaMins?' · 🕐 ~'+etaMins+' '+t.min:'');
       document.getElementById('spShelterInfo').style.display = 'block';
       document.getElementById('shPanel').style.display = 'none';
       document.getElementById('shelterPopup').classList.add('on');
@@ -975,10 +1090,10 @@ async function confirmShelter() {
 
   if (result) {
     const etaMins = Math.ceil(result.duration / 60);
-    document.getElementById('emShEta').textContent = t.eta + etaMins + ' ' + t.min;
+    document.getElementById('emShEta').textContent = '🕐 '+t.eta + etaMins + ' ' + t.min;
     routeLayer = L.polyline(result.coords,{color:'#D32F2F',weight:7,opacity:.9}).addTo(map);
     document.getElementById('slWarn').style.display = 'none';
-    startNav(result, s.name);
+    startNav(result, s.name, true);
   } else {
     routeLayer = L.polyline([from,[s.lat,s.lng]],{color:'#D32F2F',weight:6,opacity:.8,dashArray:'10 6'}).addTo(map);
     document.getElementById('slWarn').style.display = 'block';
@@ -1024,14 +1139,17 @@ function dismissAlert() {
   if (routeLayer) { map.removeLayer(routeLayer); routeLayer=null; }
   stopNav();
   placeShelterMarkers(sheltersData, null);
-  currentPos = USER_POS;
-  userMarker.setLatLng(currentPos);
+  if (isSimMode) { currentPos=[...USER_POS]; userMarker.setLatLng(currentPos); }
 }
+
 
 // ─── SOCKET ───────────────────────────────────────────────────────────────
 function connectSocket() {
   const socket = io(API,{transports:['websocket','polling']});
-  socket.on('connect',()=>{ document.getElementById('stConn').style.color='#69F0AE'; });
+  socket.on('connect',()=>{
+    document.getElementById('stConn').style.color='#69F0AE';
+    socket.emit('requestCurrentAlert');
+  });
   socket.on('disconnect',()=>{ document.getElementById('stConn').style.color='#FF5252'; });
   socket.on('alert', data => showAlert(data));
 }
