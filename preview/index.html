@@ -214,6 +214,25 @@
     /* Shelter ETA chip */
     .sh-eta{font-size:10px;color:#2E7D32;font-weight:700;margin-right:auto;}
 
+    /* Start navigation button — shown after route calculated */
+    #startNavBtn{position:absolute;bottom:240px;left:50%;transform:translateX(-50%);
+      z-index:500;background:linear-gradient(135deg,#2E7D32,#43A047);color:#fff;
+      border:none;border-radius:22px;padding:13px 32px;font-size:15px;font-weight:800;
+      box-shadow:0 6px 24px rgba(46,125,50,.5);cursor:pointer;font-family:inherit;
+      display:none;white-space:nowrap;letter-spacing:.3px;
+      animation:popIn .3s cubic-bezier(.34,1.56,.64,1);}
+    @keyframes popIn{from{opacity:0;transform:translateX(-50%) scale(.8)}to{opacity:1;transform:translateX(-50%) scale(1)}}
+    /* Live nav mode — search bar slides up, map fills more */
+    #searchWrap.nav-live{opacity:.3;pointer-events:none;transition:opacity .3s;}
+    /* Exit live nav button */
+    #exitNavBtn{position:absolute;top:10px;right:10px;z-index:600;
+      background:#0D1B2A;color:#fff;border:none;border-radius:10px;
+      padding:8px 12px;font-size:12px;font-weight:700;cursor:pointer;
+      font-family:inherit;box-shadow:0 2px 10px rgba(0,0,0,.3);display:none;}
+    /* Direction arrow on user marker */
+    .user-arrow{position:absolute;top:-12px;left:50%;transform:translateX(-50%);
+      font-size:14px;transition:transform .4s;}
+
     /* Leaflet pin styles */
     .user-ring{background:rgba(21,101,192,.18);border-radius:50%;width:44px;height:44px;display:flex;align-items:center;justify-content:center;}
     .user-dot{background:#1565C0;border-radius:50%;width:16px;height:16px;border:3px solid #fff;box-shadow:0 2px 8px rgba(21,101,192,.6);}
@@ -320,6 +339,12 @@
       <button class="map-btn" title="מיקומי" onclick="goToUser()" id="locBtn">📍</button>
       <button class="map-btn" id="layerBtn" title="שנה שכבה" onclick="toggleLayer()">🛰</button>
     </div>
+
+    <!-- Start navigation button (shown after route calculated) -->
+    <button id="startNavBtn" onclick="enterLiveNav()">▶ צא לדרך</button>
+
+    <!-- Exit live nav -->
+    <button id="exitNavBtn" onclick="exitLiveNav()">✕ יציאה</button>
 
     <!-- Mock alert trigger -->
     <button id="mockBtn" title="סמלץ אזעקה" onclick="triggerMockAlert()">🚨</button>
@@ -609,6 +634,7 @@ function initGeolocation() {
 }
 
 function setCurrentPos(coord, isReal) {
+  const prev=currentPos;
   const wasNull = !currentPos;
   currentPos = coord;
   if (userMarker) userMarker.setLatLng(coord);
@@ -616,6 +642,12 @@ function setCurrentPos(coord, isReal) {
   if (isReal) {
     const dot = document.getElementById('gpsDot');
     dot.textContent = '📍'; dot.className = 'active'; dot.title = 'GPS פעיל';
+  }
+  // Live nav follow with real GPS
+  if (liveNavActive && map && prev) {
+    const bearing=calcBearing(prev,coord);
+    updateUserArrow(bearing);
+    map.setView(coord, 17, {animate:true, duration:1});
   }
 }
 
@@ -867,9 +899,18 @@ function startNav(result, destName, isEmergency=false) {
       return;
     }
     // Move simulated dot (only if sim mode or no real GPS)
+    const prevPos=navCoords[navCoordIdx-1];
     if (isSimMode||!gpsWatchId) {
       currentPos=navCoords[navCoordIdx];
       if (userMarker) userMarker.setLatLng(currentPos);
+    }
+    // Bearing from prev → current
+    if (prevPos && currentPos) {
+      const bearing=calcBearing(prevPos,currentPos);
+      if (liveNavActive) {
+        updateUserArrow(bearing);
+        map.setView(currentPos, 17, {animate:true, duration:1});
+      }
     }
     // Advance step index
     const progress=navCoordIdx/navCoords.length;
@@ -900,12 +941,65 @@ function stopNav() {
   clearInterval(navInterval); navInterval=null;
   document.getElementById('navBar').classList.remove('on','em-mode');
   document.getElementById('navProgress').style.display='none';
+  if (liveNavActive) exitLiveNav();
+}
+
+// ─── LIVE NAV MODE ("first-person" follow) ────────────────────────────────
+let liveNavActive=false, lastBearing=0;
+
+function enterLiveNav() {
+  liveNavActive=true;
+  document.getElementById('startNavBtn').style.display='none';
+  document.getElementById('exitNavBtn').style.display='block';
+  document.getElementById('searchWrap').classList.add('nav-live');
+  document.getElementById('shPanel').style.display='none';
+  document.getElementById('mockBtn').style.display='none';
+  if (map) map.setView(currentPos||USER_POS, 17, {animate:true});
+  updateUserArrow(lastBearing);
+}
+
+function exitLiveNav() {
+  liveNavActive=false;
+  document.getElementById('exitNavBtn').style.display='none';
+  document.getElementById('searchWrap').classList.remove('nav-live');
+  document.getElementById('shPanel').style.display='block';
+  document.getElementById('mockBtn').style.display='flex';
+  // Restore the user marker to plain dot
+  if (userMarker) userMarker.setIcon(L.divIcon({
+    html:'<div class="user-ring"><div class="user-dot"></div></div>',
+    className:'',iconSize:[44,44],iconAnchor:[22,22],
+  }));
+  if (routeLayer && map) map.fitBounds(routeLayer.getBounds(),{padding:[80,60]});
+  else if (map) map.setView(currentPos||USER_POS, 14, {animate:true});
+}
+
+function updateUserArrow(bearing) {
+  if (!userMarker) return;
+  lastBearing=bearing;
+  const arrow=bearing!==null
+    ? `<div style="position:relative;width:44px;height:44px;display:flex;align-items:center;justify-content:center;">
+         <div class="user-ring" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;">
+           <div class="user-dot"></div>
+         </div>
+         <div style="position:absolute;top:-10px;left:50%;transform:translateX(-50%) rotate(${bearing}deg);font-size:13px;line-height:1;">▲</div>
+       </div>`
+    : '<div class="user-ring"><div class="user-dot"></div></div>';
+  userMarker.setIcon(L.divIcon({html:arrow,className:'',iconSize:[44,44],iconAnchor:[22,22]}));
+}
+
+function calcBearing(from, to) {
+  const dLon=(to[1]-from[1])*Math.PI/180;
+  const lat1=from[0]*Math.PI/180, lat2=to[0]*Math.PI/180;
+  const y=Math.sin(dLon)*Math.cos(lat2);
+  const x=Math.cos(lat1)*Math.sin(lat2)-Math.sin(lat1)*Math.cos(lat2)*Math.cos(dLon);
+  return (Math.atan2(y,x)*180/Math.PI+360)%360;
 }
 
 // ─── ROUTE TO DESTINATION ─────────────────────────────────────────────────
 async function routeTo(dest, destName) {
   if (!map) return;
   stopNav();
+  document.getElementById('startNavBtn').style.display='none';
   document.getElementById('searchBtn').disabled = true;
   if (routeLayer)  { map.removeLayer(routeLayer); routeLayer = null; }
   if (destMarker)  { map.removeLayer(destMarker); destMarker = null; }
@@ -928,6 +1022,8 @@ async function routeTo(dest, destName) {
     ).openPopup();
     map.fitBounds(routeLayer.getBounds(),{padding:[80,60]});
     startNav(result, label, false);
+    // Show "Start navigation" button
+    document.getElementById('startNavBtn').style.display='block';
     // Show shelters along route
     loadSheltersAlongRoute(result.coords);
   } else {
