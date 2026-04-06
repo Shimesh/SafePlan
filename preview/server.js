@@ -10,7 +10,7 @@ const https = require('https');
 const fs = require('fs');
 const path = require('path');
 
-const PORT = 8080;
+const PORT = process.env.PORT || 8080;
 const BACKEND = 'http://localhost:3001';
 const HTML_FILE = path.join(__dirname, 'index.html');
 
