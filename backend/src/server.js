@@ -23,6 +23,7 @@ require('dotenv').config();
 
 const express    = require('express');
 const http       = require('http');
+const path       = require('path');
 const cors       = require('cors');
 const { Server } = require('socket.io');
 
@@ -38,13 +39,7 @@ const PORT   = process.env.PORT || 3001;
 // ─── Socket.io ───────────────────────────────────────────────────────────
 const io = new Server(server, {
   cors: {
-    // Allow connections from the Expo dev client and production mobile clients
-    origin: [
-      process.env.MOBILE_ORIGIN || 'exp://localhost:8081',
-      'http://localhost:8081',
-      'http://localhost:19000',
-      'http://localhost:19006',
-    ],
+    origin: '*',
     methods: ['GET', 'POST'],
   },
   // Reduce connection overhead for mobile clients on cellular networks
@@ -101,9 +96,14 @@ app.get('/health', (_req, res) => {
   });
 });
 
-// 404 catch-all
-app.use((_req, res) => {
-  res.status(404).json({ success: false, error: 'Not found.' });
+// ─── PWA static files ─────────────────────────────────────────────────────
+// Serve the preview/ directory as the web client (index.html, manifest.json, sw.js)
+const PREVIEW_DIR = path.join(__dirname, '../../preview');
+app.use(express.static(PREVIEW_DIR));
+
+// SPA fallback — serve index.html for any non-API route
+app.get('*', (_req, res) => {
+  res.sendFile(path.join(PREVIEW_DIR, 'index.html'));
 });
 
 // Global error handler

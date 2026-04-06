@@ -150,12 +150,32 @@ function invalidateCache() {
  */
 function getFallbackShelters() {
   return [
-    { id: 'fb-001', name: 'מקלט ציבורי – רחוב הרצל, ראש העין', address: 'רחוב הרצל 12, ראש העין', capacity: 60, type: 'public', lat: 32.0956, lng: 34.9574 },
-    { id: 'fb-002', name: 'מקלט ציבורי – כפר סבא מרכז', address: 'רחוב ויצמן 5, כפר סבא', capacity: 80, type: 'public', lat: 32.1750, lng: 34.9020 },
-    { id: 'fb-003', name: 'מקלט – גני תקווה', address: 'שדרות ירושלים 3, גני תקווה', capacity: 30, type: 'public', lat: 32.0610, lng: 34.8780 },
-    { id: 'fb-004', name: 'מקלט עירוני – הוד השרון', address: 'רחוב הבנים 7, הוד השרון', capacity: 100, type: 'municipal', lat: 32.1526, lng: 34.9067 },
-    { id: 'fb-005', name: 'מקלט – רעננה צפון', address: 'רחוב אחוזה 45, רעננה', capacity: 50, type: 'public', lat: 32.1846, lng: 34.8706 },
-    { id: 'fb-006', name: 'מקלט – פתח תקווה מזרח', address: 'רחוב חובבי ציון 8, פתח תקווה', capacity: 70, type: 'public', lat: 32.0883, lng: 34.9036 },
+    // ── Sharon / Rosh HaAyin area ──────────────────────────────────────────
+    { id: 'fb-001', name: 'מקלט ציבורי – רחוב הרצל, ראש העין',     address: 'רחוב הרצל 12, ראש העין',         capacity: 60,  type: 'public',    lat: 32.0956, lng: 34.9574 },
+    { id: 'fb-002', name: 'מקלט ציבורי – כפר סבא מרכז',            address: 'רחוב ויצמן 5, כפר סבא',          capacity: 80,  type: 'public',    lat: 32.1750, lng: 34.9020 },
+    { id: 'fb-003', name: 'מקלט – גני תקווה',                       address: 'שדרות ירושלים 3, גני תקווה',     capacity: 30,  type: 'public',    lat: 32.0610, lng: 34.8780 },
+    { id: 'fb-004', name: 'מקלט עירוני – הוד השרון',                address: 'רחוב הבנים 7, הוד השרון',        capacity: 100, type: 'municipal', lat: 32.1526, lng: 34.9067 },
+    { id: 'fb-005', name: 'מקלט – רעננה צפון',                      address: 'רחוב אחוזה 45, רעננה',           capacity: 50,  type: 'public',    lat: 32.1846, lng: 34.8706 },
+    { id: 'fb-006', name: 'מקלט – פתח תקווה מזרח',                  address: 'רחוב חובבי ציון 8, פתח תקווה',   capacity: 70,  type: 'public',    lat: 32.0883, lng: 34.9036 },
+    // ── Tel Aviv / Gush Dan ────────────────────────────────────────────────
+    { id: 'fb-007', name: 'מקלט ציבורי – דיזנגוף, תל אביב',        address: 'רחוב דיזנגוף 50, תל אביב',       capacity: 120, type: 'public',    lat: 32.0786, lng: 34.7747 },
+    { id: 'fb-008', name: 'מקלט עירוני – רמת גן',                   address: 'רחוב ביאליק 12, רמת גן',         capacity: 90,  type: 'municipal', lat: 32.0700, lng: 34.8240 },
+    { id: 'fb-009', name: 'מקלט – בני ברק',                         address: 'רחוב רבי עקיבא 20, בני ברק',     capacity: 80,  type: 'public',    lat: 32.0854, lng: 34.8340 },
+    { id: 'fb-010', name: 'מקלט – גבעתיים',                         address: 'שדרות קוגל 5, גבעתיים',          capacity: 60,  type: 'public',    lat: 32.0693, lng: 34.8121 },
+    { id: 'fb-011', name: 'מקלט עירוני – חולון',                    address: 'רחוב העצמאות 30, חולון',         capacity: 100, type: 'municipal', lat: 32.0116, lng: 34.7772 },
+    { id: 'fb-012', name: 'מקלט – בת ים',                           address: 'שדרות בן גוריון 15, בת ים',      capacity: 80,  type: 'public',    lat: 32.0221, lng: 34.7509 },
+    // ── Jerusalem ─────────────────────────────────────────────────────────
+    { id: 'fb-013', name: 'מקלט עירוני – ירושלים מרכז',             address: 'רחוב יפו 100, ירושלים',          capacity: 150, type: 'municipal', lat: 31.7833, lng: 35.2167 },
+    { id: 'fb-014', name: 'מקלט – רמות, ירושלים',                   address: 'רחוב גולומב 3, רמות, ירושלים',   capacity: 60,  type: 'public',    lat: 31.8200, lng: 35.1780 },
+    // ── Haifa ─────────────────────────────────────────────────────────────
+    { id: 'fb-015', name: 'מקלט עירוני – חיפה מרכז',                address: 'שדרות הנשיא 50, חיפה',           capacity: 120, type: 'municipal', lat: 32.8120, lng: 34.9894 },
+    { id: 'fb-016', name: 'מקלט – קריית אתא',                       address: 'רחוב הרצל 40, קריית אתא',       capacity: 70,  type: 'public',    lat: 32.8067, lng: 35.1023 },
+    // ── Beer Sheva / South ────────────────────────────────────────────────
+    { id: 'fb-017', name: 'מקלט עירוני – באר שבע',                  address: 'שדרות רגר 30, באר שבע',          capacity: 130, type: 'municipal', lat: 31.2530, lng: 34.7915 },
+    { id: 'fb-018', name: 'מקלט – אשדוד',                           address: 'רחוב הפלמ"ח 10, אשדוד',          capacity: 90,  type: 'public',    lat: 31.8040, lng: 34.6550 },
+    // ── Netanya / Center-North ────────────────────────────────────────────
+    { id: 'fb-019', name: 'מקלט – נתניה מרכז',                      address: 'שדרות בן ציון 20, נתניה',        capacity: 100, type: 'public',    lat: 32.3320, lng: 34.8600 },
+    { id: 'fb-020', name: 'מקלט עירוני – הרצליה',                   address: 'רחוב שינקין 8, הרצליה',          capacity: 80,  type: 'municipal', lat: 32.1650, lng: 34.8440 },
   ];
 }
 

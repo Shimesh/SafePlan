@@ -1,0 +1,12 @@
+{
+  "name": "saferoute-israel",
+  "version": "1.0.0",
+  "description": "SafeRoute Israel — Emergency shelter navigation PWA",
+  "scripts": {
+    "start": "node backend/src/server.js",
+    "install-backend": "cd backend && npm install"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

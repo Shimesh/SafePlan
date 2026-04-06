@@ -49,17 +49,27 @@ const orefClient = axios.create({
 });
 
 // ─── Threat-origin lookup by alert category ────────────────────────────────
-// Source: Pikud HaOref category codes (cat field in alert JSON)
+// Source: Pikud HaOref published category codes (cat field in alert JSON)
 const THREAT_ORIGIN_MAP = {
-  1:  'Gaza',        // Rockets / missiles from Gaza
-  2:  'Lebanon',     // Rockets from Lebanon / Hezbollah
-  3:  'Syria',
-  4:  'Iran',        // Ballistic missiles from Iran
-  5:  'Yemen',       // Houthi ballistic missiles
-  6:  'West Bank',
-  7:  'Iraq',
-  101: 'Gaza',       // Short-range rockets
-  102: 'Gaza',       // Mortar fire
+  1:   'Gaza',        // Rockets / missiles – Gaza
+  2:   'Lebanon',     // Rockets – Lebanon / Hezbollah
+  3:   'Syria',       // Rockets – Syria
+  4:   'Iran',        // Ballistic missiles – Iran
+  5:   'Yemen',       // Ballistic missiles – Houthi / Yemen
+  6:   'West Bank',   // West Bank / Judea & Samaria
+  7:   'Iraq',        // Iraq
+  8:   'Hostile aircraft infiltration',
+  9:   'Earthquake',
+  10:  'Radioactive material',
+  11:  'Tsunami',
+  12:  'Hazardous material',
+  13:  'Unconventional threat',
+  14:  'Terror attack',
+  15:  'General alert',
+  20:  'Lebanon',     // Drone attack – Lebanon
+  101: 'Gaza',        // Short-range rockets (Gaza border)
+  102: 'Gaza',        // Mortar fire (Gaza border)
+  103: 'Gaza',        // Anti-tank fire
 };
 
 // ─── Time-to-impact lookup (seconds) by region type ───────────────────────
@@ -94,8 +104,19 @@ function resolveTimeToImpact(regions = []) {
 /**
  * Map alert category number to a human-readable threat origin label.
  */
-function resolveThreatOrigin(cat) {
-  return THREAT_ORIGIN_MAP[cat] || 'Unknown';
+function resolveThreatOrigin(cat, title) {
+  if (THREAT_ORIGIN_MAP[cat]) return THREAT_ORIGIN_MAP[cat];
+  // Fallback: derive origin from the Hebrew alert title if category is unmapped
+  if (title) {
+    if (/איראן/.test(title))  return 'Iran';
+    if (/לבנון/.test(title))  return 'Lebanon';
+    if (/עזה/.test(title))    return 'Gaza';
+    if (/תימן/.test(title))   return 'Yemen';
+    if (/סוריה/.test(title))  return 'Syria';
+    if (/עיראק/.test(title))  return 'Iraq';
+    return title; // return the Hebrew title verbatim as the origin label
+  }
+  return 'ירי רקטות'; // default Hebrew label instead of 'Unknown'
 }
 
 /**
@@ -138,7 +159,7 @@ function processAndEmitAlert(rawAlert, io) {
   _lastAlertId = alertId;
 
   const regions      = rawAlert.data || [];   // array of region name strings
-  const threatOrigin = resolveThreatOrigin(rawAlert.cat);
+  const threatOrigin = resolveThreatOrigin(rawAlert.cat, rawAlert.title);
   const timeToImpact = resolveTimeToImpact(regions);
 
   const alertPayload = {

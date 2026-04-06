@@ -1,0 +1,22 @@
+{
+  "name": "SafeRoute Israel",
+  "short_name": "SafeRoute",
+  "description": "ניווט חירום למקלטים בזמן אזעקה",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0D1B2A",
+  "theme_color": "#1565C0",
+  "orientation": "portrait-primary",
+  "lang": "he",
+  "dir": "rtl",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["navigation", "utilities"],
+  "screenshots": []
+}

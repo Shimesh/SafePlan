@@ -1,0 +1,1068 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"/>
+  <title>SafeRoute Israel</title>
+  <link rel="manifest" href="/manifest.json"/>
+  <meta name="theme-color" content="#1565C0"/>
+  <meta name="mobile-web-app-capable" content="yes"/>
+  <meta name="apple-mobile-web-app-capable" content="yes"/>
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+  <meta name="apple-mobile-web-app-title" content="SafeRoute"/>
+  <link rel="apple-touch-icon" href="/icon-192.png"/>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+  <link href="https://fonts.googleapis.com/css2?family=Heebo:wght@400;500;600;700;800;900&family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet"/>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
+    html,body{width:100%;height:100%;font-family:'Heebo','Inter','Segoe UI',Arial,sans-serif;overflow:hidden;background:#1a1a2e;display:flex;align-items:center;justify-content:center;}
+
+    #frameWrap{display:flex;align-items:center;justify-content:center;width:100%;height:100%;}
+    #frame{width:390px;height:844px;border-radius:44px;position:relative;overflow:hidden;flex-shrink:0;
+      box-shadow:0 30px 80px rgba(0,0,0,.5),0 0 0 10px #1a1a1a,0 0 0 12px #333;background:#E8F5E9;
+      transform-origin:center center;}
+
+    #statusBar{height:44px;display:flex;align-items:flex-end;justify-content:space-between;
+      padding:0 28px 6px;font-size:12px;font-weight:600;color:#1B2631;
+      position:relative;z-index:200;background:#E8F5E9;transition:background .3s,color .3s;
+      font-family:'Heebo','Inter',sans-serif;}
+    #statusBar.dark{background:#0D1B2A;color:#fff;}
+    #statusBar.red{background:#B71C1C;color:#fff;}
+
+    .screen{position:absolute;top:0;left:0;right:0;bottom:0;
+      transition:transform .35s cubic-bezier(.4,0,.2,1);will-change:transform;}
+    .screen.off-left {transform:translateX(-100%);}
+    .screen.off-right{transform:translateX(100%);}
+    .screen.on       {transform:translateX(0);}
+
+    /* ── CHECKLIST ── */
+    #clScreen{background:linear-gradient(160deg,#E8F5E9 0%,#F1F8E9 100%);display:flex;flex-direction:column;padding:0 20px;top:44px;}
+    .cl-hdr{padding:36px 0 14px;text-align:center;}
+    .cl-brand{font-size:11px;font-weight:800;color:#2E7D32;letter-spacing:3px;text-transform:uppercase;margin-bottom:10px;}
+    .cl-title{font-size:28px;font-weight:900;color:#1B2631;margin-bottom:6px;line-height:1.2;}
+    .cl-sub{font-size:14px;color:#546E7A;line-height:1.6;font-weight:400;}
+    .cl-prog-track{height:6px;background:#C8E6C9;border-radius:4px;overflow:hidden;margin-bottom:6px;}
+    .cl-prog-fill{height:100%;background:#1565C0;border-radius:4px;transition:width .35s,background .35s;}
+    .cl-prog-fill.ready{background:#2E7D32;}
+    .cl-prog-lbl{font-size:12px;color:#78909C;text-align:center;margin-bottom:14px;font-weight:500;}
+    .cl-list{flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:8px;padding-bottom:8px;}
+    .cl-item{display:flex;align-items:center;gap:14px;background:#fff;border-radius:16px;
+      padding:15px 16px;box-shadow:0 1px 6px rgba(0,0,0,.06);cursor:pointer;user-select:none;
+      transition:background .18s,transform .1s,box-shadow .18s;}
+    .cl-item.done{background:#C8E6C9;box-shadow:0 1px 6px rgba(46,125,50,.15);}
+    .cl-item:active{transform:scale(.98);}
+    .cl-check{width:26px;height:26px;border-radius:50%;border:2px solid #B0BEC5;
+      display:flex;align-items:center;justify-content:center;flex-shrink:0;
+      font-size:13px;font-weight:900;color:#fff;transition:all .18s;}
+    .cl-item.done .cl-check{background:#2E7D32;border-color:#2E7D32;}
+    .cl-lbl{font-size:15px;font-weight:500;color:#1B2631;}
+    .cl-item.done .cl-lbl{color:#1B5E20;font-weight:700;}
+    .cl-status{text-align:center;font-size:13px;color:#78909C;padding:8px 0;font-weight:500;}
+    .cl-status.good{color:#2E7D32;font-weight:700;}
+    .cl-go{background:linear-gradient(135deg,#2E7D32,#43A047);color:#fff;border:none;border-radius:18px;padding:18px;
+      font-size:17px;font-weight:800;width:100%;cursor:pointer;margin-bottom:20px;letter-spacing:.3px;
+      box-shadow:0 6px 20px rgba(46,125,50,.4);transition:opacity .2s,transform .12s;font-family:inherit;}
+    .cl-go:disabled{background:#E0E0E0;color:#BDBDBD;box-shadow:none;cursor:not-allowed;}
+    .cl-go:not(:disabled):active{transform:scale(.98);}
+
+    /* ── MAP ── */
+    #mapScreen{background:#E3F2FD;top:44px;}
+    #map{position:absolute;top:0;left:0;right:0;bottom:0;}
+
+    /* Search bar — single row: [🌐] [input] [חפש] */
+    #searchWrap{position:absolute;top:10px;left:10px;right:10px;z-index:600;}
+    .search-row{display:flex;gap:6px;align-items:stretch;}
+    /* Lang trigger — compact square inside search row */
+    #langBtn{background:#fff;border:none;border-radius:12px;
+      padding:0 10px;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap;
+      box-shadow:0 2px 14px rgba(0,0,0,.15);color:#1B2631;display:flex;align-items:center;gap:3px;
+      font-family:inherit;flex-shrink:0;min-width:44px;justify-content:center;}
+    /* Lang dropdown anchored below the search wrap */
+    #langMenu{position:absolute;top:calc(100% + 4px);left:0;z-index:701;
+      background:#fff;border-radius:14px;overflow:hidden;
+      box-shadow:0 4px 20px rgba(0,0,0,.2);display:none;min-width:120px;}
+    #langMenu.open{display:block;}
+    .lm-item{padding:10px 14px;font-size:13px;font-weight:600;cursor:pointer;color:#1B2631;
+      display:flex;align-items:center;gap:8px;transition:background .12s;}
+    .lm-item:hover{background:#E3F2FD;}
+    .lm-item.active{color:#1565C0;}
+    #searchInput{flex:1;background:#fff;border:none;border-radius:12px;
+      padding:12px 13px;font-size:14px;color:#1B2631;font-family:inherit;font-weight:500;
+      box-shadow:0 2px 14px rgba(0,0,0,.15);outline:none;direction:rtl;min-width:0;}
+    #searchBtn{background:linear-gradient(135deg,#1565C0,#1976D2);color:#fff;border:none;border-radius:12px;
+      padding:0 13px;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap;font-family:inherit;
+      box-shadow:0 2px 10px rgba(21,101,192,.4);flex-shrink:0;}
+    #searchBtn:disabled{background:#90A4AE;box-shadow:none;}
+    #autocomplete{background:#fff;border-radius:14px;overflow:hidden;
+      box-shadow:0 4px 20px rgba(0,0,0,.15);margin-top:4px;display:none;max-height:220px;overflow-y:auto;}
+    .ac-item{padding:11px 14px;font-size:13px;color:#1B2631;cursor:pointer;border-bottom:1px solid #F5F5F5;direction:rtl;font-weight:500;display:flex;align-items:center;gap:8px;}
+    .ac-item:last-child{border-bottom:none;}
+    .ac-item:hover{background:#E3F2FD;}
+    .ac-type{font-size:10px;color:#90A4AE;flex-shrink:0;}
+
+    /* Navigation instruction bar — below search row */
+    #navBar{position:absolute;top:58px;left:10px;right:10px;z-index:590;
+      background:#0D1B2A;border-radius:14px;padding:9px 13px;
+      display:none;align-items:center;gap:10px;
+      box-shadow:0 4px 16px rgba(0,0,0,.3);}
+    #navBar.on{display:flex;}
+    #navArrow{font-size:24px;flex-shrink:0;}
+    #navInfo{flex:1;min-width:0;}
+    #navStep{font-size:13px;font-weight:700;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+    #navDist{font-size:11px;color:#90A4AE;margin-top:1px;font-weight:500;}
+    #navEta{font-size:12px;font-weight:800;color:#69F0AE;white-space:nowrap;flex-shrink:0;}
+
+    /* Map controls */
+    #mapControls{position:absolute;bottom:230px;left:10px;z-index:500;display:flex;flex-direction:column;gap:8px;}
+    .map-btn{width:40px;height:40px;background:#fff;border:none;border-radius:12px;
+      font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center;
+      box-shadow:0 2px 10px rgba(0,0,0,.2);transition:background .15s;}
+    .map-btn:active{background:#E3F2FD;}
+    .map-btn.active{background:#1565C0;color:#fff;}
+
+    /* Emergency Banner */
+    #emBanner{position:absolute;top:0;left:0;right:0;z-index:900;background:#B71C1C;
+      padding:10px 14px 10px;text-align:center;
+      transform:translateY(-100%);transition:transform .4s cubic-bezier(.34,1.56,.64,1);}
+    #emBanner.on{transform:translateY(0);}
+    .em-title{font-size:15px;font-weight:900;color:#fff;letter-spacing:.5px;}
+    .em-threat{font-size:13px;font-weight:700;color:#FFEB3B;margin-top:2px;}
+    .em-regions{font-size:11px;color:#EF9A9A;margin-top:1px;font-weight:500;}
+    #emCd{font-size:36px;font-weight:900;color:#FFEB3B;margin:4px 0 2px;line-height:1;transition:color .4s;}
+    #emCd.orange{color:#FF9800;} #emCd.red{color:#FF1744;}
+    #emCd.cover{font-size:18px;color:#FF1744;animation:pulse .6s infinite alternate;}
+    @keyframes pulse{from{opacity:1}to{opacity:.6}}
+    .em-shelter{background:rgba(0,0,0,.25);border-radius:8px;padding:5px 12px;margin-top:5px;display:none;}
+    .em-sh-name{font-weight:700;color:#fff;font-size:12px;}
+    .em-sh-eta{color:#FFCCBC;font-size:13px;font-weight:800;margin-top:1px;}
+    .em-dismiss{margin-top:6px;background:transparent;border:1px solid rgba(255,255,255,.3);
+      border-radius:8px;padding:5px 14px;color:rgba(255,255,255,.6);font-size:11px;cursor:pointer;font-family:inherit;}
+
+    /* Shelter confirmation popup */
+    #shelterPopup{position:absolute;top:0;left:0;right:0;bottom:0;z-index:950;
+      background:rgba(0,0,0,.6);display:none;align-items:center;justify-content:center;padding:24px;}
+    #shelterPopup.on{display:flex;}
+    .sp-card{background:#fff;border-radius:22px;padding:24px 20px;width:100%;max-width:330px;
+      box-shadow:0 20px 60px rgba(0,0,0,.4);text-align:center;}
+    .sp-icon{font-size:44px;margin-bottom:10px;}
+    .sp-title{font-size:19px;font-weight:900;color:#B71C1C;margin-bottom:6px;line-height:1.3;}
+    .sp-sub{font-size:13px;color:#546E7A;margin-bottom:18px;font-weight:500;line-height:1.5;}
+    .sp-shelter{background:#FFF3E0;border-radius:12px;padding:10px 14px;margin-bottom:18px;text-align:right;}
+    .sp-sh-name{font-size:13px;font-weight:700;color:#1B2631;}
+    .sp-sh-dist{font-size:12px;color:#78909C;margin-top:2px;font-weight:500;}
+    .sp-btns{display:flex;gap:10px;}
+    .sp-yes{flex:1;background:linear-gradient(135deg,#2E7D32,#43A047);color:#fff;border:none;
+      border-radius:14px;padding:14px;font-size:15px;font-weight:800;cursor:pointer;
+      box-shadow:0 4px 14px rgba(46,125,50,.4);font-family:inherit;}
+    .sp-no{flex:1;background:linear-gradient(135deg,#C62828,#D32F2F);color:#fff;border:none;
+      border-radius:14px;padding:14px;font-size:15px;font-weight:800;cursor:pointer;
+      box-shadow:0 4px 14px rgba(198,40,40,.4);font-family:inherit;}
+    .sp-yes:active,.sp-no:active{opacity:.9;transform:scale(.98);}
+
+    /* Mock alert trigger button */
+    #mockBtn{position:absolute;bottom:230px;right:10px;z-index:500;
+      width:40px;height:40px;background:#D32F2F;border:none;border-radius:12px;
+      font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center;
+      box-shadow:0 2px 10px rgba(0,0,0,.3);}
+
+    /* Straight-line warning */
+    #slWarn{position:absolute;bottom:215px;left:0;right:0;z-index:410;
+      background:#E65100;padding:9px 14px;text-align:center;display:none;}
+    #slWarn span{color:#fff;font-weight:700;font-size:13px;}
+
+    /* Shelter panel — vertical scrollable list */
+    #shPanel{position:absolute;bottom:0;left:0;right:0;z-index:400;background:#fff;
+      border-radius:22px 22px 0 0;box-shadow:0 -4px 20px rgba(0,0,0,.1);
+      max-height:230px;display:flex;flex-direction:column;}
+    .sh-handle{width:36px;height:4px;background:#E0E0E0;border-radius:2px;margin:8px auto 4px;flex-shrink:0;}
+    .sh-hdr{display:flex;justify-content:space-between;align-items:baseline;padding:0 16px 6px;flex-shrink:0;}
+    .sh-htitle{font-size:14px;font-weight:800;color:#1B2631;}
+    .sh-hcount{font-size:11px;color:#90A4AE;font-weight:500;}
+    #shCards{flex:1;overflow-y:auto;padding:0 10px 10px;display:flex;flex-direction:column;gap:6px;
+      -webkit-overflow-scrolling:touch;overscroll-behavior:contain;}
+    #shCards::-webkit-scrollbar{width:3px;}
+    #shCards::-webkit-scrollbar-thumb{background:#CFD8DC;border-radius:2px;}
+    .sh-card{background:#F1F8E9;border-radius:12px;padding:9px 11px;
+      display:flex;gap:9px;align-items:center;box-shadow:0 1px 4px rgba(0,0,0,.06);cursor:pointer;
+      transition:transform .12s;flex-shrink:0;}
+    .sh-card:active{transform:scale(.98);}
+    .sh-card.nearest{border:2px solid #2E7D32;background:#E8F5E9;}
+    .sh-icon{font-size:20px;flex-shrink:0;}
+    .sh-info{flex:1;min-width:0;}
+    .sh-name{font-size:12px;font-weight:700;color:#1B2631;margin-bottom:1px;line-height:1.3;
+      white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+    .sh-dist{font-size:12px;font-weight:800;color:#1565C0;}
+    .sh-row{display:flex;align-items:center;gap:5px;margin-top:2px;}
+    .sh-badge{display:inline-block;border-radius:4px;padding:1px 5px;
+      font-size:10px;font-weight:700;color:#fff;background:#2E7D32;}
+    .sh-badge.m{background:#1565C0;} .sh-badge.p{background:#6A1B9A;}
+    .sh-cap{font-size:10px;color:#78909C;font-weight:500;}
+
+    /* Leaflet pin styles */
+    .user-ring{background:rgba(21,101,192,.18);border-radius:50%;width:44px;height:44px;display:flex;align-items:center;justify-content:center;}
+    .user-dot{background:#1565C0;border-radius:50%;width:16px;height:16px;border:3px solid #fff;box-shadow:0 2px 8px rgba(21,101,192,.6);}
+    .sh-pin{background:#2E7D32;color:#fff;border-radius:50%;width:30px;height:30px;
+      display:flex;align-items:center;justify-content:center;font-size:15px;
+      border:2px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,.4);}
+    .sh-pin.em{background:#D32F2F;border-color:#FF8A80;font-size:17px;}
+    .dest-pin{background:#FF6F00;color:#fff;border-radius:50%;width:32px;height:32px;
+      display:flex;align-items:center;justify-content:center;font-size:17px;
+      border:2px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,.4);}
+  </style>
+</head>
+<body>
+<div id="frameWrap">
+<div id="frame">
+  <div id="statusBar">
+    <span id="stTime">9:41</span>
+    <span>SafeRoute 🇮🇱</span>
+    <span id="stConn">●●●</span>
+  </div>
+
+  <!-- ══ CHECKLIST ══ -->
+  <div id="clScreen" class="screen on">
+    <div class="cl-hdr">
+      <div class="cl-brand">SafeRoute 🇮🇱</div>
+      <div class="cl-title" id="clTitle">צ׳ק-ליסט לפני יציאה</div>
+      <div class="cl-sub" id="clSub">קח רגע לוודא שאתה מוכן.<br>ארבעה סעיפים לפחות נדרשים.</div>
+    </div>
+    <div class="cl-prog-track"><div class="cl-prog-fill" id="progFill" style="width:0%"></div></div>
+    <div class="cl-prog-lbl" id="progLbl">0 מתוך 6 הושלמו</div>
+    <div class="cl-list" id="clList"></div>
+    <div class="cl-status" id="clStat">נא להשלים לפחות 4 סעיפים</div>
+    <button class="cl-go" id="clBtn" disabled onclick="goMap()">התחל נסיעה →</button>
+  </div>
+
+  <!-- ══ MAP ══ -->
+  <div id="mapScreen" class="screen off-right">
+    <div id="map"></div>
+
+    <!-- Search with lang dropdown embedded in row -->
+    <div id="searchWrap">
+      <div class="search-row">
+        <button id="langBtn" onclick="toggleLangMenu()">🌐 <span id="langLabel">עב</span></button>
+        <input id="searchInput" placeholder="לאן נוסעים?" oninput="onSearchInput()" onkeydown="onSearchKey(event)"/>
+        <button id="searchBtn" onclick="doRoute()">חפש</button>
+      </div>
+      <div id="langMenu"></div>
+      <div id="autocomplete"></div>
+    </div>
+
+    <!-- Navigation instruction bar (shown during active route) -->
+    <div id="navBar">
+      <div id="navArrow">➡️</div>
+      <div id="navInfo">
+        <div id="navStep">מחשב מסלול…</div>
+        <div id="navDist"></div>
+      </div>
+      <div id="navEta"></div>
+    </div>
+
+    <!-- Emergency banner -->
+    <div id="emBanner">
+      <div class="em-title" id="emTitle">🚨 אזעקה פעילה!</div>
+      <div class="em-threat" id="emThreat"></div>
+      <div class="em-regions" id="emRegions"></div>
+      <div id="emCd">90</div>
+      <div class="em-shelter" id="emShelter">
+        <div class="em-sh-name" id="emShName"></div>
+        <div class="em-sh-eta" id="emShEta"></div>
+      </div>
+      <button class="em-dismiss" onclick="dismissAlert()">ביטול (לא מומלץ)</button>
+    </div>
+
+    <!-- Shelter confirmation popup -->
+    <div id="shelterPopup">
+      <div class="sp-card">
+        <div class="sp-icon">🚨</div>
+        <div class="sp-title" id="spTitle">אזעקה פעילה!</div>
+        <div class="sp-sub" id="spSub">זוהה איום. האם לנווט למקלט הקרוב?</div>
+        <div class="sp-shelter" id="spShelterInfo" style="display:none">
+          <div class="sp-sh-name" id="spShName"></div>
+          <div class="sp-sh-dist" id="spShDist"></div>
+        </div>
+        <div class="sp-btns">
+          <button class="sp-yes" id="spYes" onclick="confirmShelter()">✓ כן, נווט</button>
+          <button class="sp-no" onclick="rejectShelter()">✕ לא</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Map controls -->
+    <div id="mapControls">
+      <button class="map-btn" title="מיקומי" onclick="goToUser()" id="locBtn">📍</button>
+      <button class="map-btn" id="layerBtn" title="שנה שכבה" onclick="toggleLayer()">🛰</button>
+    </div>
+
+    <!-- Mock alert trigger -->
+    <button id="mockBtn" title="סמלץ אזעקה" onclick="triggerMockAlert()">🚨</button>
+
+    <!-- Straight-line warning -->
+    <div id="slWarn"><span id="slWarnTxt">⚠ ניווט ישיר בלבד — בדוק מסלול</span></div>
+
+    <!-- Shelter panel -->
+    <div id="shPanel">
+      <div class="sh-handle"></div>
+      <div class="sh-hdr">
+        <span class="sh-htitle" id="shTitle">מקלטים בדרך</span>
+        <span class="sh-hcount" id="shCount"></span>
+      </div>
+      <div id="shCards"></div>
+    </div>
+  </div>
+</div>
+</div>
+
+<script>
+// ─── RESPONSIVE SCALING ────────────────────────────────────────────────────
+function fitFrame() {
+  const frame = document.getElementById('frame');
+  const FRAME_W = 390, FRAME_H = 844;
+  const PAD = 16;
+  const scaleX = (window.innerWidth  - PAD * 2) / FRAME_W;
+  const scaleY = (window.innerHeight - PAD * 2) / FRAME_H;
+  const scale  = Math.min(1, scaleX, scaleY);
+  frame.style.transform = `scale(${scale})`;
+  const marginH = -((FRAME_H * (1 - scale)) / 2);
+  const marginW = -((FRAME_W * (1 - scale)) / 2);
+  frame.style.margin = `${marginH}px ${marginW}px`;
+}
+fitFrame();
+window.addEventListener('resize', fitFrame);
+
+// In production (Railway) API is same-origin. Locally falls back to port 3001.
+const API  = window.location.port === '59536' || window.location.hostname === 'localhost'
+             ? 'http://localhost:3001' : '';
+const OSRM = 'https://router.project-osrm.org/route/v1/driving';
+
+// ─── TRANSLATIONS ─────────────────────────────────────────────────────────
+const LANG_META = {
+  he:{ label:'עב', flag:'🇮🇱', name:'עברית', dir:'rtl' },
+  en:{ label:'EN', flag:'🇬🇧', name:'English', dir:'ltr' },
+  ru:{ label:'RU', flag:'🇷🇺', name:'Русский', dir:'ltr' },
+  ar:{ label:'عر', flag:'🇸🇦', name:'العربية', dir:'rtl' },
+};
+
+const T = {
+  he:{
+    clTitle:'צ׳ק-ליסט לפני יציאה', clSub:'קח רגע לוודא שאתה מוכן.\nארבעה סעיפים לפחות נדרשים.',
+    items:['הטלפון טעון לפחות 80%','נועל נעלי ריצה / נעליים סגורות','הסברת לילדים את הנוהל','בקבוק מים בתיק','תרופות הכרחיות זמינות','מסמכים חשובים / ת"ז'],
+    progOf:'מתוך', progDone:'הושלמו', startBtn:'התחל נסיעה ←',
+    notReady:'נא להשלים לפחות 4 סעיפים', readyMin:'✅ מינימום עומד! אפשר להתחיל.', allGood:'🟢 מוכן לחלוטין!',
+    searchPh:'לאן נוסעים?', searchBtn:'חפש', shTitle:'מקלטים בדרך',
+    sheltersFound:'מקלטים נמצאו', public:'ציבורי', municipal:'עירוני', private:'פרטי',
+    capacity:'קיבולת:', navigateTo:'מנווט אל:', eta:'זמן הגעה: ~', min:'דק\'',
+    emTitle:'🚨 אזעקה פעילה!', threatFrom:'איום מ-', dismiss:'ביטול (לא מומלץ)',
+    coverNow:'היכנס למקלט עכשיו!', slWarn:'⚠ ניווט ישיר בלבד — בדוק מסלול',
+    spTitle:'אזעקה פעילה!', spSub:'זוהה איום. האם לנווט למקלט הקרוב?',
+    spYes:'✓ כן, נווט', spNo:'✕ לא',
+    navCalc:'מחשב מסלול…', navArrived:'הגעת ליעד!',
+    origin:{ Iran:'איראן', Gaza:'עזה', Lebanon:'לבנון', Syria:'סוריה', Yemen:'תימן', Iraq:'עיראק', 'West Bank':'גדה המערבית',
+      'Hostile aircraft infiltration':'חדירת כלי טיס', Earthquake:'רעידת אדמה',
+      'Radioactive material':'חומר רדיואקטיבי', Tsunami:'צונאמי',
+      'Hazardous material':'חומר מסוכן', 'Unconventional threat':'איום לא קונבנציונלי',
+      'Terror attack':'פיגוע טרור', 'General alert':'התראה כללית',
+      'ירי רקטות ופגזים':'ירי רקטות ופגזים', 'ירי רקטות':'ירי רקטות' },
+  },
+  en:{
+    clTitle:'Pre-Departure Checklist', clSub:'Take a moment to prepare.\nAt least 4 items required.',
+    items:['Phone charged 80%+','Wearing closed/running shoes','Briefed kids on procedure','Water bottle in bag','Essential meds available','ID / important documents'],
+    progOf:'of', progDone:'completed', startBtn:'Start Drive →',
+    notReady:'Please complete at least 4 items', readyMin:'✅ Minimum met! You can start.', allGood:'🟢 Fully ready!',
+    searchPh:'Where are you going?', searchBtn:'Go', shTitle:'Shelters Nearby',
+    sheltersFound:'shelters found', public:'Public', municipal:'Municipal', private:'Private',
+    capacity:'Capacity:', navigateTo:'Navigating to:', eta:'ETA: ~', min:'min',
+    emTitle:'🚨 ACTIVE ALERT!', threatFrom:'Threat from ', dismiss:'Dismiss (not recommended)',
+    coverNow:'TAKE COVER NOW!', slWarn:'⚠ Direct line only — verify route',
+    spTitle:'Active Alert!', spSub:'Threat detected. Navigate to nearest shelter?',
+    spYes:'✓ Yes, Navigate', spNo:'✕ No',
+    navCalc:'Calculating route…', navArrived:'You have arrived!',
+    origin:{ Iran:'Iran', Gaza:'Gaza', Lebanon:'Lebanon', Syria:'Syria', Yemen:'Yemen', Iraq:'Iraq', 'West Bank':'West Bank',
+      'Hostile aircraft infiltration':'Hostile Aircraft', Earthquake:'Earthquake',
+      'Radioactive material':'Radioactive', Tsunami:'Tsunami',
+      'Hazardous material':'Hazmat', 'Unconventional threat':'Unconventional',
+      'Terror attack':'Terror Attack', 'General alert':'General Alert',
+      'ירי רקטות ופגזים':'Rockets & Shells', 'ירי רקטות':'Rocket Fire' },
+  },
+  ru:{
+    clTitle:'Контрольный список', clSub:'Уделите минуту подготовке.\nТребуется не менее 4 пунктов.',
+    items:['Телефон заряжен 80%+','Надета закрытая обувь','Объяснили детям порядок','Бутылка воды','Необходимые лекарства','Удостоверение личности'],
+    progOf:'из', progDone:'выполнено', startBtn:'Начать →',
+    notReady:'Выполните не менее 4 пунктов', readyMin:'✅ Минимум выполнен!', allGood:'🟢 Полностью готово!',
+    searchPh:'Куда едем?', searchBtn:'Go', shTitle:'Убежища поблизости',
+    sheltersFound:'убежищ найдено', public:'Публичное', municipal:'Муниц.', private:'Частное',
+    capacity:'Вместимость:', navigateTo:'Маршрут к:', eta:'Прибытие: ~', min:'мин',
+    emTitle:'🚨 ТРЕВОГА!', threatFrom:'Угроза из ', dismiss:'Закрыть (не рекомендуется)',
+    coverNow:'НЕМЕДЛЕННО В УКРЫТИЕ!', slWarn:'⚠ Только прямая линия',
+    spTitle:'Тревога!', spSub:'Угроза обнаружена. Навигация к убежищу?',
+    spYes:'✓ Да, навигация', spNo:'✕ Нет',
+    navCalc:'Расчёт маршрута…', navArrived:'Вы прибыли!',
+    origin:{ Iran:'Иран', Gaza:'Газа', Lebanon:'Ливан', Syria:'Сирия', Yemen:'Йемен', Iraq:'Ирак', 'West Bank':'Западный берег',
+      'Hostile aircraft infiltration':'Воздушное судно', Earthquake:'Землетрясение',
+      'Radioactive material':'Радиация', Tsunami:'Цунами',
+      'Hazardous material':'Опасные вещества', 'Unconventional threat':'Нестандартная угроза',
+      'Terror attack':'Теракт', 'General alert':'Общая тревога',
+      'ירי רקטות ופגזים':'Ракеты и снаряды', 'ירי רקטות':'Ракетный обстрел' },
+  },
+  ar:{
+    clTitle:'قائمة التحقق', clSub:'خصص لحظة للاستعداد.\nمطلوب إتمام 4 بنود على الأقل.',
+    items:['الهاتف مشحون 80%+','ترتدي حذاءً مغلقاً','شرحت للأطفال الإجراءات','زجاجة ماء','الأدوية الضرورية','بطاقة الهوية / الوثائق'],
+    progOf:'من', progDone:'مكتملة', startBtn:'ابدأ الرحلة →',
+    notReady:'يرجى إتمام 4 بنود على الأقل', readyMin:'✅ الحد الأدنى مكتمل!', allGood:'🟢 جاهز تماماً!',
+    searchPh:'إلى أين تذهب؟', searchBtn:'ابحث', shTitle:'الملاجئ القريبة',
+    sheltersFound:'ملاجئ', public:'عام', municipal:'بلدي', private:'خاص',
+    capacity:'السعة:', navigateTo:'التوجيه إلى:', eta:'وقت الوصول: ~', min:'دقيقة',
+    emTitle:'🚨 إنذار نشط!', threatFrom:'تهديد من ', dismiss:'إغلاق (غير مستحسن)',
+    coverNow:'ادخل الملجأ الآن!', slWarn:'⚠ خط مباشر فقط',
+    spTitle:'إنذار نشط!', spSub:'تم رصد تهديد. هل تريد التوجه للملجأ الأقرب؟',
+    spYes:'✓ نعم، وجّهني', spNo:'✕ لا',
+    navCalc:'جارٍ حساب المسار…', navArrived:'لقد وصلت!',
+    origin:{ Iran:'إيران', Gaza:'غزة', Lebanon:'لبنان', Syria:'سوريا', Yemen:'اليمن', Iraq:'العراق', 'West Bank':'الضفة الغربية',
+      'Hostile aircraft infiltration':'طائرة معادية', Earthquake:'زلزال',
+      'Radioactive material':'مواد مشعة', Tsunami:'تسونامي',
+      'Hazardous material':'مواد خطرة', 'Unconventional threat':'تهديد غير تقليدي',
+      'Terror attack':'هجوم إرهابي', 'General alert':'إنذار عام',
+      'ירי רקטות ופגזים':'صواريخ وقذائف', 'ירי רקטות':'إطلاق صواريخ' },
+  },
+};
+
+let lang = 'he';
+let t = T.he;
+
+// Maneuver type → emoji arrow
+const MANEUVER_ARROW = {
+  'turn-right':'↱', 'turn-left':'↰', 'turn-sharp-right':'⤷', 'turn-sharp-left':'⤶',
+  'turn-slight-right':'↗', 'turn-slight-left':'↖',
+  'continue':'⬆', 'straight':'⬆', 'merge':'⬆',
+  'roundabout':'🔄', 'rotary':'🔄',
+  'fork-right':'↗', 'fork-left':'↖',
+  'arrive':'🏁', 'depart':'🚗',
+};
+
+function getArrow(step) {
+  if (!step) return '⬆';
+  const mod  = step.maneuver?.modifier || '';
+  const type = step.maneuver?.type || '';
+  const key  = mod ? type+'-'+mod : type;
+  return MANEUVER_ARROW[key] || MANEUVER_ARROW[type] || '⬆';
+}
+
+function formatDist(m) {
+  return m < 1000 ? Math.round(m)+'m' : (m/1000).toFixed(1)+'km';
+}
+
+function setLang(l) {
+  lang = l;
+  t = T[l];
+  const meta = LANG_META[l];
+  document.documentElement.setAttribute('lang', l);
+  document.documentElement.setAttribute('dir', meta.dir);
+
+  document.getElementById('langLabel').textContent = meta.label;
+  document.getElementById('langMenu').querySelectorAll('.lm-item').forEach(el => {
+    el.classList.toggle('active', el.dataset.l === l);
+  });
+
+  document.getElementById('clTitle').textContent = t.clTitle;
+  document.getElementById('clSub').innerHTML = t.clSub.replace('\n','<br>');
+  document.getElementById('clBtn').textContent = t.startBtn;
+  document.getElementById('searchInput').placeholder = t.searchPh;
+  document.getElementById('searchBtn').textContent = t.searchBtn;
+  document.getElementById('shTitle').textContent = t.shTitle;
+  document.getElementById('emTitle').textContent = t.emTitle;
+  document.getElementById('slWarnTxt').textContent = t.slWarn;
+  document.getElementById('spTitle').textContent = t.spTitle;
+  document.getElementById('spSub').textContent = t.spSub;
+  document.getElementById('spYes').textContent = t.spYes;
+  document.getElementById('searchInput').style.direction = meta.dir;
+
+  renderChecklist();
+  updateChecklistUI();
+  if (sheltersData.length) renderShelterCards(sheltersData);
+}
+
+function buildLangMenu() {
+  const menu = document.getElementById('langMenu');
+  menu.textContent = '';
+  Object.entries(LANG_META).forEach(([l, m]) => {
+    const item = document.createElement('div');
+    item.className = 'lm-item' + (l === lang ? ' active' : '');
+    item.dataset.l = l;
+    item.innerHTML = `<span>${m.flag}</span><span>${m.name}</span>`;
+    item.onclick = () => { setLang(l); closeLangMenu(); };
+    menu.appendChild(item);
+  });
+}
+
+function toggleLangMenu() {
+  document.getElementById('langMenu').classList.toggle('open');
+}
+function closeLangMenu() {
+  document.getElementById('langMenu').classList.remove('open');
+}
+
+// ─── CLOCK ────────────────────────────────────────────────────────────────
+function tick() {
+  const n = new Date();
+  document.getElementById('stTime').textContent = n.getHours()+':'+String(n.getMinutes()).padStart(2,'0');
+}
+tick(); setInterval(tick, 10000);
+
+// ─── NAV ──────────────────────────────────────────────────────────────────
+function goMap() {
+  document.getElementById('clScreen').className  = 'screen off-left';
+  document.getElementById('mapScreen').className = 'screen on';
+  document.getElementById('statusBar').className = 'dark';
+  initMap();
+}
+
+// ─── CHECKLIST ────────────────────────────────────────────────────────────
+const checked = new Set();
+
+function renderChecklist() {
+  const list = document.getElementById('clList');
+  list.textContent = '';
+  t.items.forEach((label, i) => {
+    const item = document.createElement('div');
+    item.className = 'cl-item' + (checked.has(i) ? ' done' : '');
+    const box = document.createElement('div');
+    box.className = 'cl-check';
+    box.textContent = checked.has(i) ? '✓' : '';
+    const txt = document.createElement('span');
+    txt.className = 'cl-lbl';
+    txt.textContent = label;
+    item.appendChild(box); item.appendChild(txt);
+    item.addEventListener('click', () => {
+      if (checked.has(i)) checked.delete(i); else checked.add(i);
+      renderChecklist(); updateChecklistUI();
+    });
+    list.appendChild(item);
+  });
+}
+
+function updateChecklistUI() {
+  const n = checked.size;
+  document.getElementById('progFill').style.width = (n/6*100)+'%';
+  document.getElementById('progFill').className = 'cl-prog-fill'+(n>=4?' ready':'');
+  document.getElementById('progLbl').textContent = n+' '+t.progOf+' 6 '+t.progDone;
+  const stat = document.getElementById('clStat');
+  const btn  = document.getElementById('clBtn');
+  if      (n < 4) { stat.textContent = t.notReady; stat.className = 'cl-status'; btn.disabled = true; }
+  else if (n < 6) { stat.textContent = t.readyMin; stat.className = 'cl-status good'; btn.disabled = false; }
+  else            { stat.textContent = t.allGood;  stat.className = 'cl-status good'; btn.disabled = false; }
+  btn.textContent = t.startBtn;
+}
+
+renderChecklist(); updateChecklistUI();
+buildLangMenu();
+
+// ─── MAP ──────────────────────────────────────────────────────────────────
+let map=null, userMarker=null, routeLayer=null, emMarker=null, destMarker=null, shelterLayers=[];
+let mapReady=false, isSatellite=false;
+let streetLayer, satLayer;
+const USER_POS = [32.0956, 34.9574]; // Rosh HaAyin (simulated)
+
+function initMap() {
+  if (mapReady) return;
+  mapReady = true;
+
+  map = L.map('map',{zoomControl:false,attributionControl:false}).setView(USER_POS,14);
+  streetLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19}).addTo(map);
+  satLayer    = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{maxZoom:19});
+  L.control.zoom({position:'bottomright'}).addTo(map);
+
+  const userIcon = L.divIcon({
+    html:'<div class="user-ring"><div class="user-dot"></div></div>',
+    className:'',iconSize:[44,44],iconAnchor:[22,22],
+  });
+  userMarker = L.marker(USER_POS,{icon:userIcon,zIndexOffset:1000}).addTo(map);
+
+  loadShelters();
+  connectSocket();
+}
+
+function toggleLayer() {
+  isSatellite = !isSatellite;
+  if (isSatellite) { map.removeLayer(streetLayer); satLayer.addTo(map); }
+  else             { map.removeLayer(satLayer); streetLayer.addTo(map); }
+  document.getElementById('layerBtn').classList.toggle('active', isSatellite);
+}
+
+function goToUser() {
+  if (map) map.setView(currentPos || USER_POS, 15, {animate:true});
+}
+
+// ─── AUTOCOMPLETE + NOMINATIM GEOCODING ───────────────────────────────────
+const CITIES = [
+  {name:'תל אביב-יפו', nameEn:'Tel Aviv',     coord:[32.0853,34.7818]},
+  {name:'ירושלים',     nameEn:'Jerusalem',     coord:[31.7683,35.2137]},
+  {name:'חיפה',        nameEn:'Haifa',         coord:[32.7940,34.9896]},
+  {name:'באר שבע',     nameEn:'Beer Sheva',    coord:[31.2518,34.7913]},
+  {name:'נתניה',       nameEn:'Netanya',       coord:[32.3226,34.8533]},
+  {name:'רמת גן',      nameEn:'Ramat Gan',     coord:[32.0680,34.8240]},
+  {name:'פתח תקווה',   nameEn:'Petah Tikva',   coord:[32.0840,34.8878]},
+  {name:'ראשון לציון', nameEn:'Rishon LeZion', coord:[31.9642,34.8044]},
+  {name:'אשדוד',       nameEn:'Ashdod',        coord:[31.8014,34.6552]},
+  {name:'אשקלון',      nameEn:'Ashkelon',      coord:[31.6688,34.5742]},
+  {name:'הוד השרון',   nameEn:'Hod HaSharon',  coord:[32.1526,34.9067]},
+  {name:'ראש העין',    nameEn:'Rosh HaAyin',   coord:[32.0956,34.9574]},
+  {name:'רעננה',       nameEn:'Raanana',       coord:[32.1846,34.8706]},
+  {name:'כפר סבא',     nameEn:'Kfar Saba',     coord:[32.1784,34.9038]},
+  {name:'הרצליה',      nameEn:'Herzliya',      coord:[32.1643,34.8431]},
+  {name:'רחובות',      nameEn:'Rehovot',       coord:[31.8969,34.8186]},
+  {name:'מודיעין',     nameEn:"Modi'in",       coord:[31.8969,35.0096]},
+  {name:'בני ברק',     nameEn:'Bnei Brak',     coord:[32.0809,34.8338]},
+  {name:'חולון',       nameEn:'Holon',         coord:[32.0103,34.7794]},
+  {name:'בת ים',       nameEn:'Bat Yam',       coord:[32.0228,34.7506]},
+];
+
+let acSelected = -1;
+let acAllMatches = [];  // combined preset + geocode results
+let nominatimTimer = null;
+
+async function nominatimSearch(q) {
+  const accLang = (lang === 'he' || lang === 'ar') ? lang : 'en';
+  const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&countrycodes=il&limit=7&addressdetails=1&accept-language=${accLang}`;
+  try {
+    const r = await fetch(url, { headers: { 'Accept-Language': accLang } });
+    const d = await r.json();
+    const seen = new Set();
+    return d.reduce((acc, item) => {
+      const addr = item.address || {};
+      const road   = addr.road || addr.pedestrian || addr.footway || addr.suburb || '';
+      const num    = addr.house_number || '';
+      const city   = addr.city || addr.town || addr.village || addr.county || '';
+      const parts  = [road + (num ? ' ' + num : ''), city].filter(Boolean);
+      const name   = parts.length >= 2 ? parts.join(', ')
+                   : item.display_name.split(',').slice(0, 3).join(', ');
+      if (seen.has(name)) return acc;
+      seen.add(name);
+      acc.push({
+        name,
+        fullName: item.display_name,
+        coord: [parseFloat(item.lat), parseFloat(item.lon)],
+        type: item.type || 'place',
+        isGeo: true,
+      });
+      return acc;
+    }, []);
+  } catch(e) { return []; }
+}
+
+function renderAC(presets, geoResults) {
+  const box = document.getElementById('autocomplete');
+  box.textContent = '';
+  acAllMatches = [...presets, ...geoResults];
+  if (!acAllMatches.length) { box.style.display='none'; return; }
+
+  acAllMatches.forEach((item) => {
+    const el = document.createElement('div');
+    el.className = 'ac-item';
+    const nameSpan = document.createElement('span');
+    nameSpan.style.flex = '1';
+    nameSpan.textContent = item.name + (item.nameEn && lang !== 'he' ? ' — '+item.nameEn : '');
+    const typeSpan = document.createElement('span');
+    typeSpan.className = 'ac-type';
+    typeSpan.textContent = item.isGeo ? '📍' : '🏙';
+    el.appendChild(nameSpan);
+    el.appendChild(typeSpan);
+    el.addEventListener('mousedown', e => { e.preventDefault(); selectPlace(item); });
+    box.appendChild(el);
+  });
+  box.style.display = 'block';
+}
+
+function onSearchInput() {
+  const q = document.getElementById('searchInput').value.trim();
+  const box = document.getElementById('autocomplete');
+  acSelected = -1;
+  clearTimeout(nominatimTimer);
+
+  if (!q || q.length < 1) { box.style.display='none'; acAllMatches=[]; return; }
+
+  const ql = q.toLowerCase();
+  const presets = CITIES.filter(c => c.name.includes(q) || c.nameEn.toLowerCase().includes(ql)).slice(0,4);
+  renderAC(presets, []);
+
+  // Debounced Nominatim for real addresses
+  if (q.length >= 2) {
+    nominatimTimer = setTimeout(async () => {
+      const geo = await nominatimSearch(q);
+      // Deduplicate: skip geo results that duplicate a preset coord
+      const filtered = geo.filter(g => !presets.some(p =>
+        Math.abs(p.coord[0]-g.coord[0])<0.01 && Math.abs(p.coord[1]-g.coord[1])<0.01
+      ));
+      renderAC(presets, filtered);
+    }, 400);
+  }
+}
+
+function onSearchKey(e) {
+  const box   = document.getElementById('autocomplete');
+  const items = box.querySelectorAll('.ac-item');
+  if (e.key === 'ArrowDown') { acSelected = Math.min(acSelected+1, items.length-1); highlightAC(items); e.preventDefault(); }
+  else if (e.key === 'ArrowUp') { acSelected = Math.max(acSelected-1, 0); highlightAC(items); e.preventDefault(); }
+  else if (e.key === 'Enter') { acSelected >= 0 ? selectPlace(acAllMatches[acSelected]) : doRoute(); }
+  else if (e.key === 'Escape') { box.style.display='none'; }
+}
+function highlightAC(items) { items.forEach((it,i) => it.style.background = i===acSelected ? '#E3F2FD' : ''); }
+
+function selectPlace(place) {
+  document.getElementById('searchInput').value = place.name;
+  document.getElementById('autocomplete').style.display = 'none';
+  routeTo(place.coord, place.name);
+}
+
+async function doRoute() {
+  document.getElementById('autocomplete').style.display = 'none';
+  const q = document.getElementById('searchInput').value.trim();
+  if (!q) return;
+  // Try preset first
+  const ql = q.toLowerCase();
+  const preset = CITIES.find(c => c.name.includes(q) || c.nameEn.toLowerCase().includes(ql));
+  if (preset) { routeTo(preset.coord, preset.name); return; }
+  // Fall back to Nominatim
+  document.getElementById('searchBtn').disabled = true;
+  document.getElementById('searchBtn').textContent = '...';
+  const results = await nominatimSearch(q);
+  document.getElementById('searchBtn').disabled = false;
+  document.getElementById('searchBtn').textContent = t.searchBtn;
+  if (results.length) {
+    routeTo(results[0].coord, results[0].name);
+  }
+}
+
+// ─── OSRM ROUTING ─────────────────────────────────────────────────────────
+async function osrmRoute(from, to, withSteps = false) {
+  const steps = withSteps ? '&steps=true' : '';
+  const url = `${OSRM}/${from[1]},${from[0]};${to[1]},${to[0]}?overview=full&geometries=geojson${steps}`;
+  try {
+    const r = await fetch(url);
+    const d = await r.json();
+    if (d.code === 'Ok' && d.routes?.[0]) {
+      const route = d.routes[0];
+      const coords = route.geometry.coordinates.map(([lng,lat]) => [lat,lng]);
+      const steps = route.legs?.[0]?.steps || [];
+      return { coords, duration: route.duration, distance: route.distance, steps };
+    }
+  } catch(e) {}
+  return null;
+}
+
+// ─── NAV SIMULATION ───────────────────────────────────────────────────────
+let currentPos = null;   // live simulated position [lat,lng]
+let navInterval = null;
+let navCoords = [];
+let navSteps = [];
+let navCoordIdx = 0;
+let navStepIdx = 0;
+let navTotalDist = 0;
+let savedRoute = null;   // route to restore if user rejects shelter
+
+function startNav(result, destName) {
+  stopNav();
+  navCoords = result.coords;
+  navSteps  = result.steps;
+  navCoordIdx = 0;
+  navStepIdx  = 0;
+  navTotalDist = result.distance;
+  currentPos = navCoords[0];
+
+  document.getElementById('navBar').classList.add('on');
+  updateNavBar();
+
+  // Advance the dot along the route every 1.2s (compressed simulation)
+  navInterval = setInterval(() => {
+    navCoordIdx++;
+    if (navCoordIdx >= navCoords.length) {
+      stopNav();
+      document.getElementById('navStep').textContent = t.navArrived;
+      document.getElementById('navArrow').textContent = '🏁';
+      document.getElementById('navDist').textContent = '';
+      document.getElementById('navEta').textContent = '';
+      return;
+    }
+    currentPos = navCoords[navCoordIdx];
+    userMarker.setLatLng(currentPos);
+
+    // Advance step when ~70% through current step's coords
+    if (navSteps.length > navStepIdx + 1) {
+      const progress = navCoordIdx / navCoords.length;
+      let stepsProgress = 0;
+      for (let i = 0; i <= navStepIdx; i++) {
+        stepsProgress += (navSteps[i]?.distance || 0) / navTotalDist;
+      }
+      if (progress > stepsProgress) navStepIdx++;
+    }
+    updateNavBar();
+  }, 1200);
+}
+
+function updateNavBar() {
+  const step = navSteps[navStepIdx];
+  const remaining = navCoords.length > 0
+    ? Math.max(0, navTotalDist * (1 - navCoordIdx / navCoords.length))
+    : 0;
+  const etaMins = Math.ceil(remaining / (40000 / 60)); // ~40 km/h → m/min
+
+  document.getElementById('navArrow').textContent = getArrow(step);
+  document.getElementById('navStep').textContent  = step?.name || (lang === 'he' ? 'המשך ישר' : 'Continue');
+  document.getElementById('navDist').textContent  = formatDist(step?.distance || remaining);
+  document.getElementById('navEta').textContent   = etaMins > 0 ? t.eta + etaMins + ' ' + t.min : '';
+}
+
+function stopNav() {
+  clearInterval(navInterval);
+  navInterval = null;
+  document.getElementById('navBar').classList.remove('on');
+}
+
+// ─── ROUTE TO DESTINATION ─────────────────────────────────────────────────
+async function routeTo(dest, destName) {
+  if (!map) return;
+  stopNav();
+  document.getElementById('searchBtn').disabled = true;
+  if (routeLayer)  { map.removeLayer(routeLayer); routeLayer = null; }
+  if (destMarker)  { map.removeLayer(destMarker); destMarker = null; }
+  if (emMarker)    { map.removeLayer(emMarker); emMarker = null; }
+  document.getElementById('slWarn').style.display = 'none';
+
+  const from = currentPos || USER_POS;
+  const result = await osrmRoute(from, dest, true);
+  document.getElementById('searchBtn').disabled = false;
+
+  const label = destName || document.getElementById('searchInput').value || '';
+  savedRoute = { coords: (result?.coords || [from, dest]), dest, label };
+
+  if (result) {
+    routeLayer = L.polyline(result.coords, {color:'#1565C0',weight:5,opacity:.88}).addTo(map);
+
+    // Destination marker
+    const di = L.divIcon({html:'<div class="dest-pin">📍</div>',className:'',iconSize:[32,32],iconAnchor:[16,16]});
+    destMarker = L.marker(dest,{icon:di}).addTo(map);
+    if (label) destMarker.bindPopup('<b>'+label+'</b>').openPopup();
+
+    map.fitBounds(routeLayer.getBounds(),{padding:[80,60]});
+    startNav(result, label);
+  } else {
+    routeLayer = L.polyline([from, dest],{color:'#1565C0',weight:4,opacity:.7,dashArray:'8 6'}).addTo(map);
+    map.fitBounds(routeLayer.getBounds(),{padding:[80,60]});
+    document.getElementById('slWarn').style.display = 'block';
+  }
+}
+
+// ─── SHELTERS ─────────────────────────────────────────────────────────────
+let sheltersData = [];
+
+async function loadShelters() {
+  try {
+    const pos = currentPos || USER_POS;
+    const r = await fetch(`${API}/api/shelters/nearest?lat=${pos[0]}&lng=${pos[1]}&limit=10`);
+    const d = await r.json();
+    sheltersData = d.shelters || [];
+    renderShelterCards(sheltersData);
+    placeShelterMarkers(sheltersData, null);
+    document.getElementById('shCount').textContent = sheltersData.length+' '+t.sheltersFound;
+  } catch(e) {}
+}
+
+function placeShelterMarkers(list, nearestId) {
+  shelterLayers.forEach(m => map.removeLayer(m));
+  shelterLayers = [];
+  list.forEach(s => {
+    const em = (s.id === nearestId);
+    const icon = L.divIcon({
+      html:`<div class="sh-pin${em?' em':''}">${em?'🎯':'🛡'}</div>`,
+      className:'',iconSize:[30,30],iconAnchor:[15,15],
+    });
+    const m = L.marker([s.lat,s.lng],{icon}).addTo(map);
+    m.bindPopup(`<b>${s.name}</b><br>${s.address||''}<br>${s.capacity?t.capacity+' '+s.capacity+' אנשים':''}`);
+    if (em) m.openPopup();
+    shelterLayers.push(m);
+  });
+}
+
+function renderShelterCards(list) {
+  const box = document.getElementById('shCards');
+  box.textContent = '';
+  document.getElementById('shTitle').textContent = t.shTitle;
+  document.getElementById('shCount').textContent = list.length+' '+t.sheltersFound;
+  list.forEach((s,i) => {
+    const card = document.createElement('div');
+    card.className = 'sh-card'+(i===0?' nearest':'');
+    const icon = document.createElement('div'); icon.className='sh-icon'; icon.textContent='🛡️';
+    const info = document.createElement('div'); info.className='sh-info';
+    const name = document.createElement('div'); name.className='sh-name'; name.textContent=s.name;
+    const dist = document.createElement('div'); dist.className='sh-dist';
+    const dm = s.distanceMeters;
+    dist.textContent = dm!=null ? (dm<1000?Math.round(dm)+' מ׳':(dm/1000).toFixed(1)+' ק"מ') : '';
+    const badge = document.createElement('div');
+    badge.className='sh-badge'+(s.type==='municipal'?' m':s.type==='private'?' p':'');
+    badge.textContent = s.type==='municipal'?t.municipal:s.type==='private'?t.private:t.public;
+    const cap = document.createElement('div'); cap.className='sh-cap';
+    if (s.capacity) cap.textContent = t.capacity+' '+s.capacity;
+    const row = document.createElement('div'); row.className='sh-row';
+    row.append(badge, cap);
+    info.append(name, dist, row);
+    card.append(icon,info);
+    card.addEventListener('click',()=>{ if(map) map.setView([s.lat,s.lng],16); });
+    box.appendChild(card);
+  });
+}
+
+// ─── EMERGENCY ────────────────────────────────────────────────────────────
+let cdInterval=null, secsLeft=0;
+let pendingShelter=null;  // shelter awaiting user confirmation
+
+const ORIGIN_DISPLAY = raw => {
+  if (!raw) return '';
+  return t.origin?.[raw] || raw;
+};
+
+async function showAlert(data) {
+  clearInterval(cdInterval);
+  secsLeft = data.timeToImpact || 90;
+
+  // Show compact banner
+  document.getElementById('emBanner').classList.add('on');
+  document.getElementById('emTitle').textContent = t.emTitle;
+  document.getElementById('emThreat').textContent = t.threatFrom + ORIGIN_DISPLAY(data.threatOrigin);
+  document.getElementById('emRegions').textContent = (data.regions||[]).join(' · ');
+  document.getElementById('statusBar').className = 'red';
+
+  cdTick(); cdInterval = setInterval(cdTick, 1000);
+
+  // Fetch nearest shelter then show confirmation popup
+  try {
+    const r = await fetch(API+'/api/shelters/nearest?lat='+(currentPos||USER_POS)[0]+'&lng='+(currentPos||USER_POS)[1]+'&limit=1');
+    const d = await r.json();
+    const s = d.shelters?.[0];
+    if (s) {
+      pendingShelter = s;
+      const dm = s.distanceMeters;
+      const distStr = dm ? (dm<1000?Math.round(dm)+' מ׳':(dm/1000).toFixed(1)+' ק"מ') : '';
+      document.getElementById('spTitle').textContent = t.spTitle;
+      document.getElementById('spSub').textContent = t.spSub;
+      document.getElementById('spYes').textContent = t.spYes;
+      document.getElementById('spShName').textContent = s.name;
+      document.getElementById('spShDist').textContent = distStr;
+      document.getElementById('spShelterInfo').style.display = 'block';
+      document.getElementById('shPanel').style.display = 'none';
+      document.getElementById('shelterPopup').classList.add('on');
+    }
+  } catch(e) {}
+}
+
+async function confirmShelter() {
+  document.getElementById('shelterPopup').classList.remove('on');
+  const s = pendingShelter;
+  if (!s) return;
+  pendingShelter = null;
+
+  // Route to shelter
+  const from = currentPos || USER_POS;
+  const result = await osrmRoute(from, [s.lat, s.lng], true);
+
+  if (routeLayer) map.removeLayer(routeLayer);
+  if (emMarker)   map.removeLayer(emMarker);
+
+  document.getElementById('emShelter').style.display = 'block';
+  document.getElementById('emShName').textContent = t.navigateTo+' '+s.name;
+
+  if (result) {
+    const etaMins = Math.ceil(result.duration / 60);
+    document.getElementById('emShEta').textContent = t.eta + etaMins + ' ' + t.min;
+    routeLayer = L.polyline(result.coords,{color:'#D32F2F',weight:7,opacity:.9}).addTo(map);
+    document.getElementById('slWarn').style.display = 'none';
+    startNav(result, s.name);
+  } else {
+    routeLayer = L.polyline([from,[s.lat,s.lng]],{color:'#D32F2F',weight:6,opacity:.8,dashArray:'10 6'}).addTo(map);
+    document.getElementById('slWarn').style.display = 'block';
+  }
+
+  emMarker = L.marker([s.lat,s.lng],{icon:L.divIcon({
+    html:'<div class="sh-pin em">🎯</div>',className:'',iconSize:[34,34],iconAnchor:[17,17],
+  })}).addTo(map);
+  emMarker.bindPopup('<b>🎯 '+t.navigateTo+'</b><br>'+s.name).openPopup();
+
+  placeShelterMarkers(sheltersData, s.id);
+  if (routeLayer) map.fitBounds(routeLayer.getBounds(),{padding:[80,60]});
+}
+
+function rejectShelter() {
+  document.getElementById('shelterPopup').classList.remove('on');
+  document.getElementById('shPanel').style.display = 'block';
+  pendingShelter = null;
+  // Restore original route if it existed
+  if (savedRoute && savedRoute.dest) {
+    routeTo(savedRoute.dest, savedRoute.label);
+  }
+}
+
+function cdTick() {
+  const el = document.getElementById('emCd');
+  if (secsLeft <= 0) { clearInterval(cdInterval); el.className='cover'; el.textContent=t.coverNow; return; }
+  el.textContent = String(secsLeft);
+  el.className = secsLeft>60?'':secsLeft>30?'orange':'red';
+  secsLeft--;
+}
+
+function dismissAlert() {
+  clearInterval(cdInterval);
+  document.getElementById('emBanner').classList.remove('on');
+  document.getElementById('emShelter').style.display = 'none';
+  document.getElementById('shelterPopup').classList.remove('on');
+  document.getElementById('shPanel').style.display = 'block';
+  document.getElementById('slWarn').style.display = 'none';
+  document.getElementById('statusBar').className = 'dark';
+  if (emMarker && map) { map.removeLayer(emMarker); emMarker=null; }
+  if (destMarker && map) { map.removeLayer(destMarker); destMarker=null; }
+  if (routeLayer) { map.removeLayer(routeLayer); routeLayer=null; }
+  stopNav();
+  placeShelterMarkers(sheltersData, null);
+  currentPos = USER_POS;
+  userMarker.setLatLng(currentPos);
+}
+
+// ─── SOCKET ───────────────────────────────────────────────────────────────
+function connectSocket() {
+  const socket = io(API,{transports:['websocket','polling']});
+  socket.on('connect',()=>{ document.getElementById('stConn').style.color='#69F0AE'; });
+  socket.on('disconnect',()=>{ document.getElementById('stConn').style.color='#FF5252'; });
+  socket.on('alert', data => showAlert(data));
+}
+
+// ─── MOCK ALERT ───────────────────────────────────────────────────────────
+const MOCK_ORIGINS = ['Gaza','Iran','Lebanon','Yemen','Syria'];
+let mockIdx = 0;
+function triggerMockAlert() {
+  const threatOrigin = MOCK_ORIGINS[mockIdx % MOCK_ORIGINS.length];
+  mockIdx++;
+  showAlert({ id:'mock-'+Date.now(), title:'ירי רקטות ופגזים',
+    threatOrigin, regions:['שרון','גוש דן'], timeToImpact:90,
+    category: threatOrigin==='Gaza'?1:threatOrigin==='Iran'?4:2,
+    timestamp: new Date().toISOString() });
+}
+
+// Close menus on outside click
+document.addEventListener('click', e => {
+  if (!document.getElementById('searchWrap')?.contains(e.target))
+    document.getElementById('autocomplete').style.display='none';
+  if (!document.getElementById('langBtn')?.contains(e.target) &&
+      !document.getElementById('langMenu')?.contains(e.target))
+    closeLangMenu();
+});
+
+// PWA — register service worker
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').catch(() => {});
+  });
+}
+</script>
+</body>
+</html>
