@@ -16,10 +16,14 @@
     "readyMinimum": "Minimum met! You can start driving.",
     "allGood": "Fully ready! Stay safe."
   },
+  "app": {
+    "description": "SafeRoute Israel guides you to the nearest shelter in real time when an alert is triggered. The route is calculated automatically based on your location.",
+    "tagline": "Emergency navigation · Live shelters · Home Front Command alerts"
+  },
   "map": {
     "searchPlaceholder": "Where are you going?",
     "searchButton": "Find Route",
-    "sheltersNearby": "Shelters Along Route",
+    "sheltersNearby": "Nearby Shelters",
     "shelterCount": "{{count}} shelters found",
     "rerouting": "Rerouting to shelter...",
     "loadingShelters": "Loading shelters...",
@@ -28,16 +32,56 @@
     "destination": "Destination",
     "eta": "ETA: {{minutes}} min",
     "distance": "{{km}} km",
-    "capacity": "Capacity: {{n}} people"
+    "capacity": "Capacity: {{n}} people",
+    "stopNav": "Stop Navigation"
+  },
+  "shelter": {
+    "types": {
+      "public": "Public",
+      "private": "Private",
+      "municipal": "Municipal"
+    }
+  },
+  "nav": {
+    "in": "in",
+    "arrive": "You have arrived!",
+    "straight": "Continue straight",
+    "turnRight": "Turn right",
+    "turnLeft": "Turn left"
   },
   "emergency": {
     "banner": "🚨 ACTIVE ALERT!",
-    "threat": "Threat from {{origin}}",
-    "impact": "Time to impact: {{seconds}} seconds",
+    "preliminary": "⚠ PRELIMINARY WARNING",
+    "preliminarySubtitle": "Calmly proceed to shelter — you have time",
+    "active": "🚨 ACTIVE ALERT!",
+    "activeSubtitle": "Enter shelter IMMEDIATELY!",
+    "threat": "{{origin}}",
+    "preparationTime": "Preparation time: {{seconds}} seconds",
+    "impactTime": "Time to impact: {{seconds}} seconds",
     "shelterEta": "Nearest shelter: {{minutes}} min",
     "reroutingTo": "Rerouting to: {{name}}",
     "dismiss": "Dismiss (not recommended)",
-    "callEmergency": "911 / 112"
+    "callEmergency": "101 / 112",
+    "takeCover": "TAKE COVER NOW!",
+    "straightLineWarning": "⚠ Direct line only — verify route",
+    "regions": "Affected areas: {{regions}}",
+    "instructions": {
+      "ballistic": "Go to your safe room / protected space. Lie on the floor away from windows.",
+      "rockets": "Go to the stairwell / protected space. Do not use the elevator.",
+      "general": "Follow Home Front Command instructions."
+    }
+  },
+  "radio": {
+    "title": "Live Radio",
+    "select": "Select station",
+    "selectTitle": "Israeli Radio Stations",
+    "stop": "Stop",
+    "errorTitle": "Playback Error",
+    "errorBody": "Cannot play this station. Check your internet connection and try again."
+  },
+  "language": {
+    "title": "Language",
+    "restartNote": "Text direction change will take effect after restarting the app."
   },
   "settings": {
     "title": "Settings",

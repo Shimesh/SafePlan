@@ -83,15 +83,17 @@ export const MOCK_SHELTERS: Shelter[] = [
   },
 ];
 
-// ─── Mock alert (Iranian ballistic missile, 90s to impact) ──────────────────
+// ─── Mock alert (rockets from Gaza, 90s to impact, active siren) ────────────
 export const MOCK_ALERT: Alert = {
   id: `mock-alert-${Date.now()}`,
   title: 'ירי רקטות ופגזים',
-  threatOrigin: 'Iran',
+  threatOrigin: 'ירי רקטות — עזה',
   regions: ['שרון', 'גוש דן'],
-  timeToImpact: 90, // seconds
-  category: 4,       // Pikud HaOref category for Iran
+  timeToImpact: 90,            // seconds from siren to impact
+  warningTimeSeconds: 0,       // rockets = no preliminary phase
+  category: 1,                 // Pikud HaOref cat 1 = rockets
   timestamp: new Date().toISOString(),
+  alertType: 'active',
 };
 
 // ─── Scenario runner ─────────────────────────────────────────────────────────

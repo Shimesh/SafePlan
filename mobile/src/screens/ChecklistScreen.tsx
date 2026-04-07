@@ -1,17 +1,11 @@
 /**
  * ChecklistScreen.tsx – "Departure Readiness" pre-drive checklist
  *
- * Design philosophy:
- *  - Calming soft green → blue gradient conveys safety and control
- *  - Each item animates with a spring effect when checked (tactile feedback)
- *  - Progress indicator shows completion at a glance
- *  - "Start Drive" is disabled until ≥ 4 of 6 items are checked
- *  - All strings come from useTranslation() for full i18n support
- *  - Layout is RTL-aware via I18nManager (set in App.tsx)
- *
- * Accessibility:
- *  - Each checklist row has accessibilityRole="checkbox" and accessibilityState
- *  - Colors meet WCAG AA contrast on both green and blue backgrounds
+ * Additions over previous version:
+ *  - App description at the top (translatable)
+ *  - Language switcher (4 languages; RTL changes require app restart)
+ *  - Live radio player (RadioPlayer component with expo-av)
+ *  - Responsive layout using useWindowDimensions
  */
 
 import React, { useState, useRef, useCallback } from 'react';
@@ -25,10 +19,15 @@ import {
   SafeAreaView,
   Platform,
   Vibration,
+  Alert,
+  I18nManager,
+  useWindowDimensions,
 } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import type { StackNavigationProp } from '@react-navigation/stack';
 import type { RootStackParamList } from '../navigation/AppNavigator';
+import i18n, { SUPPORTED_LANGUAGES, RTL_LANGUAGES, type SupportedLang } from '../i18n';
+import RadioPlayer from '../components/RadioPlayer';
 
 type ChecklistNavigationProp = StackNavigationProp<RootStackParamList, 'Checklist'>;
 
@@ -36,11 +35,8 @@ interface Props {
   navigation: ChecklistNavigationProp;
 }
 
-// ─── Checklist item keys (match translation file) ─────────────────────────
 const ITEM_KEYS = ['phone', 'shoes', 'kids', 'water', 'meds', 'docs'] as const;
 type ItemKey = typeof ITEM_KEYS[number];
-
-// Minimum items to check before "Start Drive" is enabled
 const MIN_REQUIRED = 4;
 
 // ─── Single checklist row ──────────────────────────────────────────────────
@@ -62,7 +58,6 @@ function ChecklistItem({ label, checked, onPress, scaleAnim }: ChecklistItemProp
         accessibilityState={{ checked }}
         accessibilityLabel={label}
       >
-        {/* Checkbox circle */}
         <View style={[styles.checkbox, checked && styles.checkboxChecked]}>
           {checked && <Text style={styles.checkmark}>✓</Text>}
         </View>
@@ -74,12 +69,70 @@ function ChecklistItem({ label, checked, onPress, scaleAnim }: ChecklistItemProp
   );
 }
 
+// ─── Language switcher ─────────────────────────────────────────────────────
+function LanguageSwitcher() {
+  const { t }                      = useTranslation();
+  const [, forceUpdate]            = useState(0); // force re-render after lang change
+  const currentLang                = i18n.language as SupportedLang;
+
+  const handleLangChange = useCallback((code: SupportedLang) => {
+    if (code === i18n.language) return;
+
+    const wasRTL  = RTL_LANGUAGES.includes(currentLang);
+    const willRTL = RTL_LANGUAGES.includes(code);
+
+    i18n.changeLanguage(code);
+    forceUpdate((n) => n + 1);
+
+    // RTL ↔ LTR direction change requires app restart in React Native
+    if (wasRTL !== willRTL) {
+      I18nManager.forceRTL(willRTL);
+      Alert.alert(
+        t('language.title'),
+        t('language.restartNote'),
+        [{ text: t('common.ok') }]
+      );
+    }
+  }, [currentLang, t]);
+
+  return (
+    <View style={styles.langContainer}>
+      <Text style={styles.langLabel}>{t('language.title')}</Text>
+      <View style={styles.langButtons}>
+        {SUPPORTED_LANGUAGES.map((lang) => (
+          <TouchableOpacity
+            key={lang.code}
+            style={[
+              styles.langBtn,
+              currentLang === lang.code && styles.langBtnActive,
+            ]}
+            onPress={() => handleLangChange(lang.code)}
+            activeOpacity={0.75}
+            accessibilityRole="button"
+            accessibilityState={{ selected: currentLang === lang.code }}
+            accessibilityLabel={lang.name}
+          >
+            <Text
+              style={[
+                styles.langBtnText,
+                currentLang === lang.code && styles.langBtnTextActive,
+              ]}
+            >
+              {lang.name}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+    </View>
+  );
+}
+
 // ─── Main screen ───────────────────────────────────────────────────────────
 export default function ChecklistScreen({ navigation }: Props) {
-  const { t } = useTranslation();
+  const { t }    = useTranslation();
+  const { width } = useWindowDimensions();
   const [checked, setChecked] = useState<Set<ItemKey>>(new Set());
 
-  // One Animated.Value per item for independent spring animations
   const animations = useRef(
     ITEM_KEYS.reduce((acc, key) => {
       acc[key] = new Animated.Value(1);
@@ -90,39 +143,26 @@ export default function ChecklistScreen({ navigation }: Props) {
   const canStart = checked.size >= MIN_REQUIRED;
   const allDone  = checked.size === ITEM_KEYS.length;
 
-  // ── Toggle item with spring animation ────────────────────────────────
   const toggleItem = useCallback((key: ItemKey) => {
-    // Spring punch: scale down then back to 1
     Animated.sequence([
       Animated.spring(animations[key], {
-        toValue: 0.92,
-        useNativeDriver: true,
-        speed: 50,
-        bounciness: 0,
+        toValue: 0.92, useNativeDriver: true, speed: 50, bounciness: 0,
       }),
       Animated.spring(animations[key], {
-        toValue: 1,
-        useNativeDriver: true,
-        speed: 20,
-        bounciness: 10,
+        toValue: 1, useNativeDriver: true, speed: 20, bounciness: 10,
       }),
     ]).start();
 
-    // Short haptic vibration on native platforms
     if (Platform.OS !== 'web') Vibration.vibrate(30);
 
     setChecked((prev) => {
       const next = new Set(prev);
-      if (next.has(key)) {
-        next.delete(key);
-      } else {
-        next.add(key);
-      }
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
       return next;
     });
   }, [animations]);
 
-  // ── Navigate to map ───────────────────────────────────────────────────
   const handleStart = useCallback(() => {
     if (!canStart) return;
     navigation.navigate('Map');
@@ -130,87 +170,98 @@ export default function ChecklistScreen({ navigation }: Props) {
 
   return (
     <SafeAreaView style={styles.container}>
-      {/* Header */}
-      <View style={styles.header}>
-        <Text style={styles.appName}>SafeRoute 🇮🇱</Text>
-        <Text style={styles.title}>{t('checklist.title')}</Text>
-        <Text style={styles.subtitle}>{t('checklist.subtitle')}</Text>
-      </View>
-
-      {/* Progress bar */}
-      <View style={styles.progressContainer}>
-        <View style={styles.progressTrack}>
-          <View
-            style={[
-              styles.progressFill,
-              { width: `${(checked.size / ITEM_KEYS.length) * 100}%` },
-              canStart && styles.progressFillReady,
-            ]}
-          />
-        </View>
-        <Text style={styles.progressLabel}>
-          {t('checklist.progress', {
-            done: checked.size,
-            total: ITEM_KEYS.length,
-          })}
-        </Text>
-      </View>
-
-      {/* Checklist items */}
       <ScrollView
-        style={styles.list}
-        contentContainerStyle={styles.listContent}
         showsVerticalScrollIndicator={false}
+        contentContainerStyle={styles.scrollContent}
+        keyboardShouldPersistTaps="handled"
       >
-        {ITEM_KEYS.map((key) => (
-          <ChecklistItem
-            key={key}
-            label={t(`checklist.items.${key}`)}
-            checked={checked.has(key)}
-            onPress={() => toggleItem(key)}
-            scaleAnim={animations[key]}
-          />
-        ))}
+        {/* ── App name + description ──────────────────────────────── */}
+        <View style={styles.header}>
+          <Text style={styles.appName}>SafeRoute 🇮🇱</Text>
+          <Text style={styles.appDescription}>{t('app.description')}</Text>
+          <Text style={styles.appTagline}>{t('app.tagline')}</Text>
+        </View>
+
+        {/* ── Language switcher ────────────────────────────────────── */}
+        <LanguageSwitcher />
+
+        {/* ── Live radio player ────────────────────────────────────── */}
+        <RadioPlayer />
+
+        {/* ── Checklist header ─────────────────────────────────────── */}
+        <View style={styles.sectionHeader}>
+          <Text style={styles.title}>{t('checklist.title')}</Text>
+          <Text style={styles.subtitle}>{t('checklist.subtitle')}</Text>
+        </View>
+
+        {/* ── Progress bar ─────────────────────────────────────────── */}
+        <View style={styles.progressContainer}>
+          <View style={styles.progressTrack}>
+            <View
+              style={[
+                styles.progressFill,
+                { width: `${(checked.size / ITEM_KEYS.length) * 100}%` as any },
+                canStart && styles.progressFillReady,
+              ]}
+            />
+          </View>
+          <Text style={styles.progressLabel}>
+            {t('checklist.progress', { done: checked.size, total: ITEM_KEYS.length })}
+          </Text>
+        </View>
+
+        {/* ── Checklist items ───────────────────────────────────────── */}
+        <View style={styles.list}>
+          {ITEM_KEYS.map((key) => (
+            <ChecklistItem
+              key={key}
+              label={t(`checklist.items.${key}`)}
+              checked={checked.has(key)}
+              onPress={() => toggleItem(key)}
+              scaleAnim={animations[key]}
+            />
+          ))}
+        </View>
+
+        {/* ── Status message ────────────────────────────────────────── */}
+        <Text style={[styles.statusText, canStart && styles.statusTextGood]}>
+          {allDone
+            ? t('checklist.allGood')
+            : canStart
+            ? t('checklist.readyMinimum')
+            : t('checklist.notReady')}
+        </Text>
       </ScrollView>
 
-      {/* Status message */}
-      <Text style={[styles.statusText, canStart && styles.statusTextGood]}>
-        {allDone
-          ? t('checklist.allGood')
-          : canStart
-          ? t('checklist.readyMinimum')  // 4-5 items checked — ready but not complete
-          : t('checklist.notReady')}
-      </Text>
-
-      {/* Start Drive button */}
-      <TouchableOpacity
-        style={[styles.startButton, !canStart && styles.startButtonDisabled]}
-        onPress={handleStart}
-        disabled={!canStart}
-        activeOpacity={0.85}
-        accessibilityRole="button"
-        accessibilityState={{ disabled: !canStart }}
-        accessibilityLabel={t('checklist.startButton')}
-      >
-        <Text style={[styles.startButtonText, !canStart && styles.startButtonTextDisabled]}>
-          {t('checklist.startButton')} →
-        </Text>
-      </TouchableOpacity>
+      {/* ── Start Drive button (sticky at bottom) ─────────────────── */}
+      <View style={styles.startWrapper}>
+        <TouchableOpacity
+          style={[styles.startButton, !canStart && styles.startButtonDisabled]}
+          onPress={handleStart}
+          disabled={!canStart}
+          activeOpacity={0.85}
+          accessibilityRole="button"
+          accessibilityState={{ disabled: !canStart }}
+          accessibilityLabel={t('checklist.startButton')}
+        >
+          <Text style={[styles.startButtonText, !canStart && styles.startButtonTextDisabled]}>
+            {t('checklist.startButton')} →
+          </Text>
+        </TouchableOpacity>
+      </View>
     </SafeAreaView>
   );
 }
 
 // ─── Styles ────────────────────────────────────────────────────────────────
 const COLORS = {
-  background:     '#E8F5E9', // soft green
-  headerGradient: '#E3F2FD', // soft blue
-  primary:        '#2E7D32', // deep green
+  background:     '#E8F5E9',
+  primary:        '#2E7D32',
   primaryLight:   '#A5D6A7',
-  accent:         '#1565C0', // blue for progress
+  accent:         '#1565C0',
   text:           '#1B2631',
   textSecondary:  '#546E7A',
   white:          '#FFFFFF',
-  checkBg:        '#F1F8E9',
   checkBgActive:  '#C8E6C9',
   disabledBg:     '#CFD8DC',
   disabledText:   '#90A4AE',
@@ -220,36 +271,107 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: COLORS.background,
-    paddingHorizontal: 20,
   },
+  scrollContent: {
+    paddingHorizontal: 20,
+    paddingBottom: 16,
+  },
+  // ── Header ────────────────────────────────────────────────────────
   header: {
     paddingTop: 24,
     paddingBottom: 16,
     alignItems: 'center',
   },
   appName: {
-    fontSize: 13,
-    fontWeight: '600',
+    fontSize: 14,
+    fontWeight: '800',
     color: COLORS.primary,
     letterSpacing: 1.5,
     textTransform: 'uppercase',
+    marginBottom: 10,
+  },
+  appDescription: {
+    fontSize: 14,
+    color: COLORS.text,
+    textAlign: 'center',
+    lineHeight: 20,
+    marginBottom: 6,
+    paddingHorizontal: 8,
+  },
+  appTagline: {
+    fontSize: 12,
+    color: COLORS.accent,
+    textAlign: 'center',
+    fontWeight: '600',
+    letterSpacing: 0.3,
+  },
+  // ── Language switcher ─────────────────────────────────────────────
+  langContainer: {
+    backgroundColor: COLORS.white,
+    borderRadius: 14,
+    padding: 12,
+    marginTop: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.06,
+    shadowRadius: 3,
+    elevation: 2,
+  },
+  langLabel: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: COLORS.textSecondary,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
     marginBottom: 8,
   },
+  langButtons: {
+    flexDirection: 'row',
+    gap: 8,
+    flexWrap: 'wrap',
+  },
+  langBtn: {
+    borderRadius: 20,
+    paddingVertical: 6,
+    paddingHorizontal: 14,
+    backgroundColor: '#ECEFF1',
+    borderWidth: 1,
+    borderColor: '#CFD8DC',
+  },
+  langBtnActive: {
+    backgroundColor: COLORS.accent,
+    borderColor: COLORS.accent,
+  },
+  langBtnText: {
+    fontSize: 13,
+    color: COLORS.textSecondary,
+    fontWeight: '600',
+  },
+  langBtnTextActive: {
+    color: COLORS.white,
+  },
+  // ── Section header ────────────────────────────────────────────────
+  sectionHeader: {
+    paddingTop: 20,
+    paddingBottom: 8,
+    alignItems: 'center',
+  },
   title: {
-    fontSize: 26,
+    fontSize: 22,
     fontWeight: '800',
     color: COLORS.text,
     textAlign: 'center',
-    marginBottom: 8,
+    marginBottom: 6,
   },
   subtitle: {
-    fontSize: 14,
+    fontSize: 13,
     color: COLORS.textSecondary,
     textAlign: 'center',
-    lineHeight: 20,
+    lineHeight: 18,
   },
+  // ── Progress ──────────────────────────────────────────────────────
   progressContainer: {
-    marginBottom: 16,
+    marginBottom: 12,
     alignItems: 'center',
   },
   progressTrack: {
@@ -272,23 +394,19 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: COLORS.textSecondary,
   },
+  // ── Checklist items ───────────────────────────────────────────────
   list: {
-    flex: 1,
-  },
-  listContent: {
-    paddingBottom: 8,
-    gap: 10,
+    gap: 8,
   },
   itemRow: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: COLORS.white,
     borderRadius: 14,
-    paddingVertical: 16,
+    paddingVertical: 14,
     paddingHorizontal: 16,
-    // Soft shadow for card effect
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
+    shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.06,
     shadowRadius: 4,
     elevation: 2,
@@ -319,7 +437,7 @@ const styles = StyleSheet.create({
   },
   itemLabel: {
     flex: 1,
-    fontSize: 16,
+    fontSize: 15,
     color: COLORS.text,
     fontWeight: '500',
   },
@@ -327,6 +445,7 @@ const styles = StyleSheet.create({
     color: COLORS.primary,
     fontWeight: '600',
   },
+  // ── Status + start button ─────────────────────────────────────────
   statusText: {
     textAlign: 'center',
     color: COLORS.textSecondary,
@@ -337,12 +456,16 @@ const styles = StyleSheet.create({
     color: COLORS.primary,
     fontWeight: '600',
   },
+  startWrapper: {
+    paddingHorizontal: 20,
+    paddingBottom: Platform.OS === 'ios' ? 8 : 16,
+    backgroundColor: COLORS.background,
+  },
   startButton: {
     backgroundColor: COLORS.primary,
     borderRadius: 16,
     paddingVertical: 18,
     alignItems: 'center',
-    marginBottom: 24,
     shadowColor: COLORS.primary,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.35,

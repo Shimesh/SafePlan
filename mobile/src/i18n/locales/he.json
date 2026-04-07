@@ -11,15 +11,19 @@
       "meds": "תרופות הכרחיות זמינות",
       "docs": "מסמכים חשובים / ת\"ז"
     },
-    "startButton": "התחל נסיעה",
+    "startButton": "צא לדרך",
     "notReady": "נא להשלים לפחות 4 סעיפים",
     "readyMinimum": "מינימום עומד! אפשר להתחיל.",
     "allGood": "מוכן לחלוטין! בהצלחה ובטחון."
   },
+  "app": {
+    "description": "SafeRoute Israel מנחה אותך אל המקלט הקרוב ביותר בזמן אמת כשמופעלת אזעקה. המסלול מחושב אוטומטית בהתאם למיקומך.",
+    "tagline": "ניווט חירום · מקלטים בזמן אמת · התרעות פיקוד העורף"
+  },
   "map": {
     "searchPlaceholder": "לאן נוסעים?",
     "searchButton": "חפש מסלול",
-    "sheltersNearby": "מקלטים בדרך",
+    "sheltersNearby": "מקלטים בסביבה",
     "shelterCount": "{{count}} מקלטים נמצאו",
     "rerouting": "מנווט למקלט...",
     "loadingShelters": "טוען מקלטים...",
@@ -28,16 +32,56 @@
     "destination": "יעד",
     "eta": "זמן הגעה: {{minutes}} דק'",
     "distance": "{{km}} ק\"מ",
-    "capacity": "קיבולת: {{n}} אנשים"
+    "capacity": "קיבולת: {{n}} אנשים",
+    "stopNav": "עצור ניווט"
+  },
+  "shelter": {
+    "types": {
+      "public": "ציבורי",
+      "private": "פרטי",
+      "municipal": "עירוני"
+    }
+  },
+  "nav": {
+    "in": "עוד",
+    "arrive": "הגעת ליעד!",
+    "straight": "המשך ישר",
+    "turnRight": "פנה ימינה",
+    "turnLeft": "פנה שמאלה"
   },
   "emergency": {
     "banner": "🚨 אזעקה פעילה!",
-    "threat": "איום מ-{{origin}}",
-    "impact": "זמן עד פגיעה: {{seconds}} שניות",
+    "preliminary": "⚠ התרעה מקדימה",
+    "preliminarySubtitle": "פנה למקלט בשלווה — יש זמן",
+    "active": "🚨 אזעקה פעילה!",
+    "activeSubtitle": "היכנס למקלט עכשיו!",
+    "threat": "{{origin}}",
+    "preparationTime": "זמן הכנה: {{seconds}} שניות",
+    "impactTime": "זמן עד פגיעה: {{seconds}} שניות",
     "shelterEta": "מקלט קרוב: {{minutes}} דק'",
-    "reroutingTo": "מנווט מחדש אל: {{name}}",
+    "reroutingTo": "מנווט אל: {{name}}",
     "dismiss": "ביטול (לא מומלץ)",
-    "callEmergency": "112"
+    "callEmergency": "112",
+    "takeCover": "היכנס למקלט עכשיו!",
+    "straightLineWarning": "⚠ ניווט ישיר בלבד — בדוק מסלול",
+    "regions": "אזורים מושפעים: {{regions}}",
+    "instructions": {
+      "ballistic": "גש לחדר הביטחון / ממ\"ד. שכב על הרצפה הרחק מחלונות.",
+      "rockets": "גש לחדר המדרגות / מרחב מוגן. אל תשתמש במעלית.",
+      "general": "עקוב אחר הנחיות פיקוד העורף."
+    }
+  },
+  "radio": {
+    "title": "רדיו ישיר",
+    "select": "בחר תחנה",
+    "selectTitle": "תחנות רדיו ישראליות",
+    "stop": "עצור",
+    "errorTitle": "שגיאת שמע",
+    "errorBody": "לא ניתן לנגן תחנה זו. בדוק חיבור לאינטרנט ונסה שנית."
+  },
+  "language": {
+    "title": "שפה",
+    "restartNote": "שינוי כיוון כתיבה ייכנס לתוקף לאחר הפעלה מחדש של האפליקציה."
   },
   "settings": {
     "title": "הגדרות",

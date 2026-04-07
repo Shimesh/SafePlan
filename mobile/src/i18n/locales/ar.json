@@ -16,10 +16,14 @@
     "readyMinimum": "الحد الأدنى مكتمل! يمكنك البدء.",
     "allGood": "جاهز تماماً! كن بأمان."
   },
+  "app": {
+    "description": "SafeRoute Israel يرشدك إلى أقرب ملجأ في الوقت الفعلي عند إطلاق إنذار. يُحسب المسار تلقائياً بناءً على موقعك.",
+    "tagline": "الملاحة الطارئة · ملاجئ مباشرة · تنبيهات قيادة الجبهة الداخلية"
+  },
   "map": {
     "searchPlaceholder": "إلى أين تذهب؟",
     "searchButton": "ابحث عن المسار",
-    "sheltersNearby": "الملاجئ على الطريق",
+    "sheltersNearby": "الملاجئ القريبة",
     "shelterCount": "تم العثور على {{count}} ملجأ",
     "rerouting": "إعادة التوجيه نحو الملجأ...",
     "loadingShelters": "جارٍ تحميل الملاجئ...",
@@ -28,16 +32,56 @@
     "destination": "الوجهة",
     "eta": "وقت الوصول: {{minutes}} دقيقة",
     "distance": "{{km}} كم",
-    "capacity": "السعة: {{n}} شخصاً"
+    "capacity": "السعة: {{n}} شخصاً",
+    "stopNav": "إيقاف الملاحة"
+  },
+  "shelter": {
+    "types": {
+      "public": "عام",
+      "private": "خاص",
+      "municipal": "بلدي"
+    }
+  },
+  "nav": {
+    "in": "بعد",
+    "arrive": "لقد وصلت!",
+    "straight": "واصل مستقيماً",
+    "turnRight": "انعطف يميناً",
+    "turnLeft": "انعطف يساراً"
   },
   "emergency": {
     "banner": "🚨 إنذار نشط!",
-    "threat": "تهديد من {{origin}}",
-    "impact": "الوقت حتى الاصطدام: {{seconds}} ثانية",
+    "preliminary": "⚠ تحذير مسبق",
+    "preliminarySubtitle": "توجه بهدوء إلى الملجأ — هناك وقت",
+    "active": "🚨 إنذار نشط!",
+    "activeSubtitle": "ادخل الملجأ فوراً!",
+    "threat": "{{origin}}",
+    "preparationTime": "وقت التحضير: {{seconds}} ثانية",
+    "impactTime": "الوقت حتى الاصطدام: {{seconds}} ثانية",
     "shelterEta": "أقرب ملجأ: {{minutes}} دقيقة",
     "reroutingTo": "جارٍ التوجيه إلى: {{name}}",
     "dismiss": "إغلاق (غير مستحسن)",
-    "callEmergency": "101 / 112"
+    "callEmergency": "101 / 112",
+    "takeCover": "ادخل الملجأ الآن!",
+    "straightLineWarning": "⚠ خط مباشر فقط — تحقق من المسار",
+    "regions": "المناطق المتأثرة: {{regions}}",
+    "instructions": {
+      "ballistic": "اذهب إلى غرفة الأمان / المرفأ المحصّن. استلقِ على الأرض بعيداً عن النوافذ.",
+      "rockets": "اذهب إلى دَرَج السلالم / الفضاء المحمي. لا تستخدم المصعد.",
+      "general": "اتبع تعليمات قيادة الجبهة الداخلية."
+    }
+  },
+  "radio": {
+    "title": "راديو مباشر",
+    "select": "اختر محطة",
+    "selectTitle": "محطات الراديو الإسرائيلية",
+    "stop": "إيقاف",
+    "errorTitle": "خطأ في التشغيل",
+    "errorBody": "لا يمكن تشغيل هذه المحطة. تحقق من اتصالك بالإنترنت وحاول مجدداً."
+  },
+  "language": {
+    "title": "اللغة",
+    "restartNote": "سيتم تطبيق تغيير اتجاه النص بعد إعادة تشغيل التطبيق."
   },
   "settings": {
     "title": "الإعدادات",

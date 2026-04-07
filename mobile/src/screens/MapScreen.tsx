@@ -1,20 +1,18 @@
 /**
  * MapScreen.tsx – Main navigation screen with real-time shelter overlay
  *
- * Lifecycle:
- *  1. Mount: fetch shelters, start GPS tracking, connect Socket.io
- *  2. User types destination → fetch Google Directions route → render polyline
- *  3. Socket.io emits 'alert' → handleAlert() fires:
- *      a. Find nearest shelter (Haversine)
- *      b. Fetch shelter route (Google Directions)
- *      c. activateEmergency() in alertStore → EmergencyBanner renders
- *      d. Map camera animates to shelter
- *  4. Unmount: stop GPS, disconnect socket
+ * Layout: The map uses StyleSheet.absoluteFillObject so it fills 100% of the
+ * viewport. All other UI elements (search bar, nav bar, shelter list, emergency
+ * banner) are positioned absolutely on top of the map.
  *
- * Performance notes:
- *  - Shelter markers memoised with React.memo in ShelterMarker
- *  - Route fetch is debounced (destination input)
- *  - Location updates throttled to every 5 seconds to save battery
+ * Camera modes:
+ *  - Idle:        city-level zoom (12), pitch 0
+ *  - Navigating:  street-level zoom (17), pitch 45 (3D tilt), follows user
+ *  - Emergency:   fit both user + shelter into view, pitch 0
+ *
+ * Step advancement:
+ *  NavigationBar watches currentLocation in the store and advances steps when
+ *  the user is within 50m of the current step's endLocation. It never uses a timer.
  */
 
 import React, { useEffect, useRef, useCallback, useState } from 'react';
@@ -28,8 +26,14 @@ import {
   Alert,
   Keyboard,
   Platform,
+  useWindowDimensions,
 } from 'react-native';
-import MapView, { Polyline, PROVIDER_GOOGLE, Region } from 'react-native-maps';
+import MapView, {
+  Polyline,
+  PROVIDER_GOOGLE,
+  Region,
+  Camera,
+} from 'react-native-maps';
 import * as Location from 'expo-location';
 import { useTranslation } from 'react-i18next';
 
@@ -42,10 +46,11 @@ import { findNearestShelter } from '../utils/haversine';
 import { runMockScenario }    from '../utils/mockData';
 
 import EmergencyBanner from '../components/EmergencyBanner';
+import NavigationBar   from '../components/NavigationBar';
 import ShelterMarker   from '../components/ShelterMarker';
 import ShelterList     from '../components/ShelterList';
 
-import type { Alert as AlertType, LatLng }  from '../types';
+import type { Alert as AlertType, LatLng } from '../types';
 
 // ─── Initial map region (Israel center) ───────────────────────────────────
 const ISRAEL_CENTER: Region = {
@@ -57,14 +62,18 @@ const ISRAEL_CENTER: Region = {
 
 // ─── Location tracking config ─────────────────────────────────────────────
 const LOCATION_OPTIONS: Location.LocationOptions = {
-  accuracy:          Location.Accuracy.High,
-  timeInterval:      5000,  // update every 5 s to save battery
-  distanceInterval:  20,    // or every 20 m, whichever comes first
+  accuracy:         Location.Accuracy.High,
+  timeInterval:     5000,  // update every 5 s to save battery
+  distanceInterval: 20,    // or every 20 m, whichever comes first
 };
 
+// ─── Min milliseconds between camera follow updates during navigation ──────
+const CAMERA_FOLLOW_THROTTLE_MS = 4000;
+
 export default function MapScreen() {
-  const { t } = useTranslation();
-  const mapRef = useRef<MapView>(null);
+  const { t }   = useTranslation();
+  const mapRef  = useRef<MapView>(null);
+  const { width, height } = useWindowDimensions();
 
   // ── Store slices ─────────────────────────────────────────────────────
   const {
@@ -75,7 +84,9 @@ export default function MapScreen() {
     setCurrentLocation,
     setRoute,
     setDestination,
+    setSteps,
     startNavigation,
+    stopNavigation,
   } = useNavigationStore();
 
   const {
@@ -87,41 +98,53 @@ export default function MapScreen() {
   const { shelters, loading: sheltersLoading, fetchShelters } = useShelterStore();
 
   // ── Local UI state ────────────────────────────────────────────────────
-  const [destinationInput, setDestinationInput] = useState('');
-  const [routeLoading, setRouteLoading]          = useState(false);
+  const [destinationInput, setDestinationInput]       = useState('');
+  const [routeLoading, setRouteLoading]               = useState(false);
+  const [isStraightLineRoute, setIsStraightLineRoute] = useState(false);
   const locationSubscription = useRef<Location.LocationSubscription | null>(null);
+  const lastCameraFollow     = useRef(0);
 
   // ─────────────────────────────────────────────────────────────────────────
-  // Initialisation
+  // Camera helpers
+  // ─────────────────────────────────────────────────────────────────────────
+  const animateCameraTo = useCallback((pos: LatLng, zoom = 14, pitch = 0) => {
+    mapRef.current?.animateCamera(
+      {
+        center:  { latitude: pos.lat, longitude: pos.lng },
+        zoom,
+        pitch,
+        heading: 0,
+        altitude: 500,
+      } as Camera,
+      { duration: 800 }
+    );
+  }, []);
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Camera follow during navigation (throttled, 3D tilt)
   // ─────────────────────────────────────────────────────────────────────────
   useEffect(() => {
-    fetchShelters();
-    startGPSTracking();
+    if (!isNavigating || isEmergencyMode || !currentLocation) return;
+    const now = Date.now();
+    if (now - lastCameraFollow.current < CAMERA_FOLLOW_THROTTLE_MS) return;
+    lastCameraFollow.current = now;
 
-    // Connect socket and register alert handler
-    const socket = socketService.connect();
-    socket.on('alert', handleAlert);
-
-    // If running in mock mode, trigger emergency after 60 s
-    let cancelMock: (() => void) | undefined;
-    if (process.env.EXPO_PUBLIC_MOCK_MODE === 'true') {
-      cancelMock = runMockScenario(handleAlert);
-    }
-
-    return () => {
-      // Always deregister the listener before disconnecting to prevent
-      // duplicate alert handlers if the component remounts
-      socket.off('alert', handleAlert);
-      locationSubscription.current?.remove();
-      socketService.disconnect();
-      cancelMock?.();
-    };
-  }, [handleAlert]); // eslint-disable-line react-hooks/exhaustive-deps
+    mapRef.current?.animateCamera(
+      {
+        center:  { latitude: currentLocation.lat, longitude: currentLocation.lng },
+        zoom:    17,
+        pitch:   45,     // 3D tilt during navigation
+        heading: 0,
+        altitude: 300,
+      } as Camera,
+      { duration: 1000 }
+    );
+  }, [currentLocation, isNavigating, isEmergencyMode]);
 
   // ─────────────────────────────────────────────────────────────────────────
   // GPS tracking
   // ─────────────────────────────────────────────────────────────────────────
-  const startGPSTracking = async () => {
+  const startGPSTracking = useCallback(async () => {
     const { status } = await Location.requestForegroundPermissionsAsync();
     if (status !== 'granted') {
       Alert.alert(
@@ -132,7 +155,7 @@ export default function MapScreen() {
       return;
     }
 
-    // Snap the camera to the user on first fix
+    // First GPS fix → city-level zoom (12)
     const initial = await Location.getCurrentPositionAsync({
       accuracy: Location.Accuracy.High,
     });
@@ -141,27 +164,23 @@ export default function MapScreen() {
       lng: initial.coords.longitude,
     };
     setCurrentLocation(initialLatLng);
-    animateCameraTo(initialLatLng, 13);
+    animateCameraTo(initialLatLng, 12, 0); // city-level, flat
 
-    // Start continuous updates
     locationSubscription.current = await Location.watchPositionAsync(
       LOCATION_OPTIONS,
       (loc) => {
         setCurrentLocation({ lat: loc.coords.latitude, lng: loc.coords.longitude });
       }
     );
-  };
+  }, [animateCameraTo, setCurrentLocation, t]);
 
   // ─────────────────────────────────────────────────────────────────────────
   // Emergency handler – core auto-reroute logic
   // ─────────────────────────────────────────────────────────────────────────
   const handleAlert = useCallback(async (alert: AlertType, _attempt = 0) => {
-    // Always read from store (not hook closure) to get the latest GPS position
-    const pos = useNavigationStore.getState().currentLocation;
+    const pos         = useNavigationStore.getState().currentLocation;
     const allShelters = useShelterStore.getState().shelters;
 
-    // If GPS or shelters are not yet ready, retry up to 3 times with 1s delay.
-    // This handles the race where an alert arrives before the first GPS fix.
     if (!pos || allShelters.length === 0) {
       if (_attempt < 3) {
         console.warn(
@@ -174,31 +193,56 @@ export default function MapScreen() {
       return;
     }
 
-    // 1. Find nearest shelter by straight-line distance
     const nearest = findNearestShelter(pos, allShelters);
 
-    // 2. Fetch driving route to that shelter
-    let route = [];
-    let etaMinutes = 5; // conservative fallback
+    let shelterPolyline = [];
+    let etaMinutes = 5;
     try {
       const result = await getRoute(pos, { lat: nearest.lat, lng: nearest.lng });
-      route = result.polyline;
+      shelterPolyline = result.polyline;
       etaMinutes = Math.ceil(result.durationSeconds / 60);
     } catch (err) {
       console.error('[MapScreen] Shelter route fetch failed, using straight line:', err);
-      // Fallback: render a two-point polyline (direct line to shelter)
-      route = [pos, { lat: nearest.lat, lng: nearest.lng }];
+      shelterPolyline = [pos, { lat: nearest.lat, lng: nearest.lng }];
+      setIsStraightLineRoute(true);
     }
 
-    // 3. Update shelter record with ETA for display in banner and list
     const nearestWithEta = { ...nearest, etaMinutes };
+    activateEmergency(alert, nearestWithEta, shelterPolyline);
 
-    // 4. Activate emergency mode in the store (renders EmergencyBanner)
-    activateEmergency(alert, nearestWithEta, route);
+    // Fit camera to show both user and shelter
+    mapRef.current?.fitToCoordinates(
+      [
+        { latitude: pos.lat, longitude: pos.lng },
+        { latitude: nearest.lat, longitude: nearest.lng },
+      ],
+      { edgePadding: { top: 100, right: 60, bottom: 80, left: 60 }, animated: true }
+    );
+  }, [activateEmergency, setIsStraightLineRoute]);
 
-    // 5. Animate camera to show both current position and shelter
-    animateCameraTo({ lat: nearest.lat, lng: nearest.lng }, 14);
-  }, [activateEmergency]);
+  // ─────────────────────────────────────────────────────────────────────────
+  // Initialisation
+  // ─────────────────────────────────────────────────────────────────────────
+  useEffect(() => {
+    fetchShelters();
+    startGPSTracking();
+
+    const socket = socketService.connect();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    socket.on('alert', (payload: any) => handleAlert(payload as AlertType));
+
+    let cancelMock: (() => void) | undefined;
+    if (process.env.EXPO_PUBLIC_MOCK_MODE === 'true') {
+      cancelMock = runMockScenario(handleAlert);
+    }
+
+    return () => {
+      socket.off('alert');   // remove all 'alert' listeners registered above
+      locationSubscription.current?.remove();
+      socketService.disconnect();
+      cancelMock?.();
+    };
+  }, [handleAlert, fetchShelters, startGPSTracking]);
 
   // ─────────────────────────────────────────────────────────────────────────
   // Route planning (normal navigation)
@@ -207,18 +251,28 @@ export default function MapScreen() {
     Keyboard.dismiss();
     if (!destinationInput.trim() || !currentLocation) return;
 
-    // For a full implementation, use the Google Places API to geocode the
-    // address string. Here we demonstrate with a hardcoded Kfar Saba coord
-    // when the input contains "כפר סבא" or "kfar saba" (mock geocoder).
     const lower = destinationInput.toLowerCase();
-    let destCoord: LatLng = { lat: 32.1784, lng: 34.9038 }; // default: Kfar Saba
+    const CITY_COORDS: Array<[string[], LatLng]> = [
+      [['תל אביב', 'tel aviv', 'telaviv'],        { lat: 32.0853, lng: 34.7818 }],
+      [['ירושלים', 'jerusalem'],                   { lat: 31.7683, lng: 35.2137 }],
+      [['חיפה', 'haifa'],                          { lat: 32.7940, lng: 34.9896 }],
+      [['באר שבע', 'beer sheva', 'beersheba'],     { lat: 31.2518, lng: 34.7913 }],
+      [['נתניה', 'netanya'],                       { lat: 32.3226, lng: 34.8533 }],
+      [['רמת גן', 'ramat gan'],                    { lat: 32.0680, lng: 34.8240 }],
+      [['פתח תקווה', 'petah tikva'],               { lat: 32.0840, lng: 34.8878 }],
+      [['ראשון לציון', 'rishon', 'rishon lezion'], { lat: 31.9642, lng: 34.8044 }],
+      [['אשדוד', 'ashdod'],                        { lat: 31.8014, lng: 34.6552 }],
+      [['הוד', 'hod hasharon'],                    { lat: 32.1526, lng: 34.9067 }],
+      [['ראש העין', 'rosh', 'rosh haayin'],        { lat: 32.0956, lng: 34.9574 }],
+      [['רעננה', "ra'anana", 'raanana'],            { lat: 32.1846, lng: 34.8706 }],
+    ];
 
-    if (lower.includes('hod') || lower.includes('הוד')) {
-      destCoord = { lat: 32.1526, lng: 34.9067 }; // Hod HaSharon
-    } else if (lower.includes('rosh') || lower.includes('ראש')) {
-      destCoord = { lat: 32.0956, lng: 34.9574 }; // Rosh HaAyin
-    } else if (lower.includes('ra\'anana') || lower.includes('רעננה')) {
-      destCoord = { lat: 32.1846, lng: 34.8706 }; // Ra'anana
+    let destCoord: LatLng = { lat: 32.1784, lng: 34.9038 };
+    for (const [keywords, coord] of CITY_COORDS) {
+      if (keywords.some((kw) => lower.includes(kw))) {
+        destCoord = coord;
+        break;
+      }
     }
 
     setDestination({ ...destCoord, name: destinationInput });
@@ -227,90 +281,69 @@ export default function MapScreen() {
     try {
       const result = await getRoute(currentLocation, destCoord);
       setRoute(result.polyline);
+      setSteps(result.steps);
       startNavigation();
 
-      // Fit the map to show the full route
+      // Fit map to route, accounting for the nav bar at top
       mapRef.current?.fitToCoordinates(
         result.polyline.map((p) => ({ latitude: p.lat, longitude: p.lng })),
-        { edgePadding: { top: 80, right: 40, bottom: 200, left: 40 }, animated: true }
+        { edgePadding: { top: 140, right: 40, bottom: 240, left: 40 }, animated: true }
       );
+
+      // After 1.5s, animate to 3D navigation view
+      setTimeout(() => {
+        if (currentLocation) {
+          animateCameraTo(currentLocation, 17, 45);
+        }
+      }, 1500);
     } catch (err) {
       console.error('[MapScreen] Route fetch failed:', err);
       Alert.alert(t('common.error'), t('common.retry'), [{ text: t('common.ok') }]);
     } finally {
       setRouteLoading(false);
     }
-  }, [destinationInput, currentLocation, setDestination, setRoute, startNavigation, t]);
+  }, [
+    destinationInput, currentLocation, setDestination, setRoute,
+    setSteps, startNavigation, animateCameraTo, t,
+  ]);
 
-  // ─────────────────────────────────────────────────────────────────────────
-  // Helpers
-  // ─────────────────────────────────────────────────────────────────────────
-  const animateCameraTo = (pos: LatLng, zoom = 14) => {
-    mapRef.current?.animateToRegion({
-      latitude:       pos.lat,
-      longitude:      pos.lng,
-      latitudeDelta:  0.05 / (zoom / 10),
-      longitudeDelta: 0.05 / (zoom / 10),
-    }, 800);
-  };
+  const handleStopNavigation = useCallback(() => {
+    stopNavigation();
+    setSteps([]);
+    // Return to city-level overview
+    if (currentLocation) {
+      animateCameraTo(currentLocation, 12, 0);
+    }
+  }, [stopNavigation, setSteps, currentLocation, animateCameraTo]);
 
   // ─────────────────────────────────────────────────────────────────────────
   // Render
   // ─────────────────────────────────────────────────────────────────────────
   return (
     <View style={styles.container}>
-      {/* Emergency banner – absolute overlay, z-index 999 */}
-      {isEmergencyMode && <EmergencyBanner />}
 
-      {/* Search bar */}
-      <View style={[
-        styles.searchContainer,
-        isEmergencyMode && styles.searchContainerEmergency,
-      ]}>
-        <TextInput
-          style={styles.searchInput}
-          placeholder={t('map.searchPlaceholder')}
-          placeholderTextColor="#90A4AE"
-          value={destinationInput}
-          onChangeText={setDestinationInput}
-          onSubmitEditing={handleSearchRoute}
-          returnKeyType="search"
-          editable={!isEmergencyMode}
-        />
-        <TouchableOpacity
-          style={[styles.searchButton, isEmergencyMode && styles.searchButtonDisabled]}
-          onPress={handleSearchRoute}
-          disabled={isEmergencyMode || routeLoading}
-        >
-          {routeLoading
-            ? <ActivityIndicator color="#fff" size="small" />
-            : <Text style={styles.searchButtonText}>{t('map.searchButton')}</Text>
-          }
-        </TouchableOpacity>
-      </View>
-
-      {/* Google Map */}
+      {/* ── Full-screen map ─────────────────────────────────────────── */}
       <MapView
         ref={mapRef}
         provider={PROVIDER_GOOGLE}
-        style={styles.map}
+        style={StyleSheet.absoluteFillObject}
         initialRegion={ISRAEL_CENTER}
         showsUserLocation
-        showsMyLocationButton
+        showsMyLocationButton={false}
         showsTraffic={isNavigating}
+        showsBuildings                // enables 3D buildings
         toolbarEnabled={false}
       >
-        {/* Normal route polyline (blue) */}
+        {/* Normal route polyline */}
         {route && !isEmergencyMode && (
           <Polyline
             coordinates={route.map((p) => ({ latitude: p.lat, longitude: p.lng }))}
             strokeColor="#1565C0"
             strokeWidth={5}
-            lineDashPattern={undefined}
           />
         )}
 
-        {/* Emergency shelter route (red, thicker) */}
+        {/* Emergency shelter route */}
         {isEmergencyMode && shelterRoute && (
           <Polyline
             coordinates={shelterRoute.map((p) => ({ latitude: p.lat, longitude: p.lng }))}
@@ -329,7 +362,49 @@ export default function MapScreen() {
         ))}
       </MapView>
 
-      {/* Shelter list panel (slides up from bottom) */}
+      {/* ── Emergency banner (absolute, z 999) ─────────────────────── */}
+      {isEmergencyMode && <EmergencyBanner />}
+
+      {/* ── Turn-by-turn nav bar (shown during normal navigation) ──── */}
+      {isNavigating && !isEmergencyMode && <NavigationBar />}
+
+      {/* ── Search bar (shown when not navigating) ─────────────────── */}
+      {!isNavigating && !isEmergencyMode && (
+        <View style={styles.searchContainer}>
+          <TextInput
+            style={styles.searchInput}
+            placeholder={t('map.searchPlaceholder')}
+            placeholderTextColor="#90A4AE"
+            value={destinationInput}
+            onChangeText={setDestinationInput}
+            onSubmitEditing={handleSearchRoute}
+            returnKeyType="search"
+          />
+          <TouchableOpacity
+            style={[styles.searchButton, routeLoading && styles.searchButtonDisabled]}
+            onPress={handleSearchRoute}
+            disabled={routeLoading}
+          >
+            {routeLoading
+              ? <ActivityIndicator color="#fff" size="small" />
+              : <Text style={styles.searchButtonText}>{t('map.searchButton')}</Text>
+            }
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {/* ── Stop navigation button ──────────────────────────────────── */}
+      {isNavigating && !isEmergencyMode && (
+        <TouchableOpacity
+          style={styles.stopNavButton}
+          onPress={handleStopNavigation}
+          activeOpacity={0.85}
+        >
+          <Text style={styles.stopNavText}>✕ {t('map.stopNav')}</Text>
+        </TouchableOpacity>
+      )}
+
+      {/* ── Shelter list panel (floating, bottom) ──────────────────── */}
       {!isEmergencyMode && (
         <View style={styles.shelterListContainer}>
           {sheltersLoading ? (
@@ -346,6 +421,15 @@ export default function MapScreen() {
           )}
         </View>
       )}
+
+      {/* ── Straight-line route warning ─────────────────────────────── */}
+      {isEmergencyMode && isStraightLineRoute && (
+        <View style={styles.straightLineWarning}>
+          <Text style={styles.straightLineWarningText}>
+            {t('emergency.straightLineWarning')}
+          </Text>
+        </View>
+      )}
     </View>
   );
 }
@@ -354,8 +438,9 @@ export default function MapScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#E3F2FD',
+    backgroundColor: '#000',   // black behind map while loading
   },
+  // ── Search bar (absolute, floats over map) ─────────────────────────
   searchContainer: {
     position: 'absolute',
     top: Platform.OS === 'ios' ? 54 : 36,
@@ -364,10 +449,6 @@ const styles = StyleSheet.create({
     zIndex: 10,
     flexDirection: 'row',
     gap: 8,
-  },
-  searchContainerEmergency: {
-    // Push below the emergency banner (~180px tall)
-    top: Platform.OS === 'ios' ? 200 : 180,
   },
   searchInput: {
     flex: 1,
@@ -379,9 +460,9 @@ const styles = StyleSheet.create({
     color: '#1B2631',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    shadowOpacity: 0.15,
+    shadowRadius: 6,
+    elevation: 5,
   },
   searchButton: {
     backgroundColor: '#1565C0',
@@ -404,19 +485,43 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     fontSize: 13,
   },
-  map: {
-    flex: 1,
+  // ── Stop navigation button ─────────────────────────────────────────
+  stopNavButton: {
+    position: 'absolute',
+    top: Platform.OS === 'ios' ? 120 : 100,
+    right: 16,
+    zIndex: 20,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 5,
   },
+  stopNavText: {
+    color: '#D32F2F',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  // ── Shelter list panel (floating above bottom) ─────────────────────
   shelterListContainer: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
     maxHeight: 220,
     backgroundColor: '#FFFFFF',
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: -3 },
-    shadowOpacity: 0.08,
-    shadowRadius: 8,
-    elevation: 8,
+    shadowOpacity: 0.12,
+    shadowRadius: 10,
+    elevation: 12,
+    zIndex: 10,
   },
   loadingRow: {
     flexDirection: 'row',
@@ -428,5 +533,23 @@ const styles = StyleSheet.create({
   loadingText: {
     color: '#546E7A',
     fontSize: 14,
+  },
+  // ── Straight-line warning ──────────────────────────────────────────
+  straightLineWarning: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    zIndex: 50,
+    backgroundColor: '#E65100',
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    alignItems: 'center',
+  },
+  straightLineWarningText: {
+    color: '#FFFFFF',
+    fontWeight: '700',
+    fontSize: 13,
+    textAlign: 'center',
   },
 });

@@ -1,19 +1,19 @@
 /**
  * EmergencyBanner.tsx
  *
- * The highest-priority UI element in the app. Displayed as a full-width
- * absolute overlay at the top of MapScreen when isEmergencyMode is true.
+ * Two-phase emergency overlay:
  *
- * Design requirements:
- *  - MUST be impossible to miss: large fonts, high-contrast red background
- *  - Shows threat origin, countdown timer (live, ticking every second), ETA
- *  - Slides down from the top with a spring animation on appearance
- *  - Pulses (opacity) to draw the eye during the critical first 10 seconds
- *  - Dismiss button exists but is styled to discourage casual use
+ *  Phase 1 — התרעה מקדימה (Preliminary Warning)
+ *    When alertType === 'preliminary' AND secondsLeft > timeToImpact.
+ *    Background: amber/orange. Calm messaging. "You have time to reach shelter."
+ *    Countdown shows total time remaining (warningTimeSeconds + timeToImpact).
  *
- * Accessibility:
- *  - accessibilityLiveRegion="polite" announces changes to screen readers
- *  - accessibilityRole="alert" for VoiceOver / TalkBack priority
+ *  Phase 2 — אזעקה פעילה (Active Alert)
+ *    When alertType === 'active' OR secondsLeft <= timeToImpact.
+ *    Background: deep red, pulsing. Urgent. "ENTER SHELTER NOW."
+ *    Countdown shows seconds until impact.
+ *
+ * The banner never self-dismisses. User must press dismiss (strongly discouraged).
  */
 
 import React, { useEffect, useRef, useState, useCallback } from 'react';
@@ -35,19 +35,10 @@ function usePulse(active: boolean) {
 
   useEffect(() => {
     if (!active) return;
-
     const loop = Animated.loop(
       Animated.sequence([
-        Animated.timing(pulseAnim, {
-          toValue: 0.75,
-          duration: 500,
-          useNativeDriver: true,
-        }),
-        Animated.timing(pulseAnim, {
-          toValue: 1,
-          duration: 500,
-          useNativeDriver: true,
-        }),
+        Animated.timing(pulseAnim, { toValue: 0.7, duration: 450, useNativeDriver: true }),
+        Animated.timing(pulseAnim, { toValue: 1,   duration: 450, useNativeDriver: true }),
       ])
     );
     loop.start();
@@ -59,51 +50,53 @@ function usePulse(active: boolean) {
 
 // ─── Component ─────────────────────────────────────────────────────────────
 export default function EmergencyBanner() {
-  const { t }                                           = useTranslation();
+  const { t } = useTranslation();
   const { activeAlert, nearestShelter, clearEmergency } = useAlertStore();
 
-  // Countdown state – starts at alert's timeToImpact and ticks down
-  const [secondsLeft, setSecondsLeft] = useState(activeAlert?.timeToImpact ?? 90);
+  if (!activeAlert) return null;
+
+  const warningTime  = activeAlert.warningTimeSeconds ?? 0;
+  const impactTime   = activeAlert.timeToImpact;
+  const totalSeconds = warningTime + impactTime;
+
+  // Countdown starts at totalSeconds (preliminary + impact combined)
+  const [secondsLeft, setSecondsLeft] = useState(totalSeconds);
   const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Slide-down animation
-  const slideAnim = useRef(new Animated.Value(-300)).current;
+  // Slide-down entrance
+  const slideAnim = useRef(new Animated.Value(-350)).current;
 
-  // Pulse opacity (fast for first 10 s, then stop to reduce distraction)
-  const [isPulsing, setIsPulsing] = useState(true);
+  // Pulse only in active phase
+  const isActivePhaseSoFar = activeAlert.alertType === 'active' || secondsLeft <= impactTime;
+  const [isPulsing, setIsPulsing] = useState(isActivePhaseSoFar);
   const pulseOpacity = usePulse(isPulsing);
 
-  // ── On mount: slide in + start countdown ───────────────────────────────
   useEffect(() => {
-    // Haptic vibration burst on alert appearance
     if (Platform.OS !== 'web') {
-      Vibration.vibrate([0, 400, 200, 400, 200, 400]);
+      Vibration.vibrate(
+        activeAlert.alertType === 'active'
+          ? [0, 500, 200, 500, 200, 500]
+          : [0, 300, 400, 300]
+      );
     }
 
-    // Slide down from above the screen
     Animated.spring(slideAnim, {
-      toValue: 0,
-      useNativeDriver: true,
-      bounciness: 6,
-      speed: 14,
+      toValue: 0, useNativeDriver: true, bounciness: 5, speed: 14,
     }).start();
 
-    // Reset countdown to the alert's stated time-to-impact
-    setSecondsLeft(activeAlert?.timeToImpact ?? 90);
+    setSecondsLeft(totalSeconds);
 
-    // Tick every second
     countdownRef.current = setInterval(() => {
       setSecondsLeft((prev) => {
         const next = Math.max(0, prev - 1);
-        if (next === 0 && countdownRef.current) {
-          clearInterval(countdownRef.current);
-        }
+        if (next === 0 && countdownRef.current) clearInterval(countdownRef.current);
         return next;
       });
     }, 1000);
 
-    // Stop pulsing after 10 seconds (pulse has done its job)
-    const pulseTimer = setTimeout(() => setIsPulsing(false), 10_000);
+    // Start pulsing when entering active phase
+    const pulseDelay = warningTime > 0 ? warningTime * 1000 : 0;
+    const pulseTimer = setTimeout(() => setIsPulsing(true), pulseDelay);
 
     return () => {
       if (countdownRef.current) clearInterval(countdownRef.current);
@@ -111,59 +104,127 @@ export default function EmergencyBanner() {
     };
   }, [activeAlert, slideAnim]);
 
-  // ── Dismiss handler ─────────────────────────────────────────────────────
   const handleDismiss = useCallback(() => {
-    // Vibrate once more as a warning that the user is dismissing an alert
     Vibration.vibrate(100);
     clearEmergency();
   }, [clearEmergency]);
 
-  if (!activeAlert) return null;
+  // ── Determine current display phase ────────────────────────────────────
+  const isActive = activeAlert.alertType === 'active' || secondsLeft <= impactTime;
 
-  // ── Countdown colour: yellow → orange → red as time runs out ───────────
+  // ── Take cover state ────────────────────────────────────────────────────
+  if (secondsLeft === 0) {
+    return (
+      <Animated.View
+        style={[styles.banner, styles.bannerTakeCover, { transform: [{ translateY: slideAnim }] }]}
+        accessibilityRole="alert"
+        accessibilityLiveRegion="assertive"
+      >
+        <Animated.View
+          style={[StyleSheet.absoluteFill, styles.pulseBgBlack, { opacity: pulseOpacity }]}
+          pointerEvents="none"
+        />
+        <Text style={styles.takeCoverText}>{t('emergency.takeCover')}</Text>
+        <TouchableOpacity style={styles.dismissButton} onPress={handleDismiss}>
+          <Text style={styles.dismissText}>{t('emergency.dismiss')}</Text>
+        </TouchableOpacity>
+      </Animated.View>
+    );
+  }
+
+  // ── Preliminary phase ───────────────────────────────────────────────────
+  if (!isActive) {
+    const secsInWarning = secondsLeft - impactTime; // time remaining before siren
+    return (
+      <Animated.View
+        style={[styles.banner, styles.bannerPreliminary, { transform: [{ translateY: slideAnim }] }]}
+        accessibilityRole="alert"
+        accessibilityLiveRegion="polite"
+      >
+        <Text style={styles.titlePreliminary}>{t('emergency.preliminary')}</Text>
+        <Text style={styles.subtitlePreliminary}>{t('emergency.preliminarySubtitle')}</Text>
+
+        <Text style={styles.threatPreliminary}>
+          {activeAlert.threatOrigin}
+        </Text>
+
+        {activeAlert.regions.length > 0 && (
+          <Text style={styles.regionsPreliminary}>
+            {activeAlert.regions.join(' · ')}
+          </Text>
+        )}
+
+        <View style={styles.countdownBoxPreliminary}>
+          <Text style={styles.countdownLabel}>{t('emergency.preparationTime', { seconds: secsInWarning })}</Text>
+          <Text style={styles.countdownPreliminary}>{secsInWarning}</Text>
+        </View>
+
+        {nearestShelter && (
+          <View style={styles.shelterBox}>
+            <Text style={styles.shelterLabel}>
+              {t('emergency.reroutingTo', { name: nearestShelter.name })}
+            </Text>
+            {nearestShelter.etaMinutes != null && (
+              <Text style={styles.shelterEta}>
+                {t('emergency.shelterEta', { minutes: nearestShelter.etaMinutes })}
+              </Text>
+            )}
+          </View>
+        )}
+
+        <Text style={styles.instructionsPreliminary}>
+          {t('emergency.instructions.ballistic')}
+        </Text>
+
+        <TouchableOpacity style={styles.dismissButtonPreliminary} onPress={handleDismiss}>
+          <Text style={styles.dismissTextPreliminary}>{t('emergency.dismiss')}</Text>
+        </TouchableOpacity>
+      </Animated.View>
+    );
+  }
+
+  // ── Active phase ────────────────────────────────────────────────────────
   const urgencyColor =
-    secondsLeft > 60 ? '#FFEB3B' :   // yellow
-    secondsLeft > 30 ? '#FF9800' :   // orange
-    '#FF1744';                         // bright red
+    secondsLeft > 60 ? '#FFEB3B' :
+    secondsLeft > 30 ? '#FF9800' :
+    '#FF1744';
 
   return (
     <Animated.View
-      style={[styles.banner, { transform: [{ translateY: slideAnim }] }]}
+      style={[styles.banner, styles.bannerActive, { transform: [{ translateY: slideAnim }] }]}
       accessibilityRole="alert"
-      accessibilityLiveRegion="polite"
+      accessibilityLiveRegion="assertive"
       accessibilityLabel={
-        `Emergency alert: Threat from ${activeAlert.threatOrigin}. ` +
-        `${secondsLeft} seconds to impact. ` +
-        `Nearest shelter: ${nearestShelter?.name ?? 'unknown'}.`
+        `${t('emergency.active')} ${activeAlert.threatOrigin}. ` +
+        `${t('emergency.impactTime', { seconds: secondsLeft })}`
       }
     >
       {/* Pulsing background tint */}
       <Animated.View
-        style={[StyleSheet.absoluteFill, styles.pulseBg, { opacity: pulseOpacity }]}
+        style={[StyleSheet.absoluteFill, styles.pulseBgActive, { opacity: pulseOpacity }]}
         pointerEvents="none"
       />
 
-      {/* ── Alert title ────────────────────────────────────────────── */}
-      <Text style={styles.title}>{t('emergency.banner')}</Text>
+      <Text style={styles.titleActive}>{t('emergency.active')}</Text>
+      <Text style={styles.subtitleActive}>{t('emergency.activeSubtitle')}</Text>
 
-      {/* ── Threat origin ──────────────────────────────────────────── */}
-      <Text style={styles.threat}>
-        {t('emergency.threat', { origin: activeAlert.threatOrigin })}
+      <Text style={styles.threatActive}>
+        {activeAlert.threatOrigin}
       </Text>
 
-      {/* Affected regions */}
       {activeAlert.regions.length > 0 && (
-        <Text style={styles.regions}>
+        <Text style={styles.regionsActive}>
           {activeAlert.regions.join(' · ')}
         </Text>
       )}
 
-      {/* ── Countdown timer ─────────────────────────────────────────── */}
-      <Text style={[styles.countdown, { color: urgencyColor }]}>
-        {t('emergency.impact', { seconds: secondsLeft })}
+      <Text style={[styles.countdownActive, { color: urgencyColor }]}>
+        {secondsLeft}
+      </Text>
+      <Text style={styles.countdownActiveLabel}>
+        {t('emergency.impactTime', { seconds: '' }).replace('{{seconds}}', '').trim()}
       </Text>
 
-      {/* ── Nearest shelter ETA ─────────────────────────────────────── */}
       {nearestShelter && (
         <View style={styles.shelterBox}>
           <Text style={styles.shelterLabel}>
@@ -177,13 +238,11 @@ export default function EmergencyBanner() {
         </View>
       )}
 
-      {/* ── Dismiss (de-emphasised) ──────────────────────────────────── */}
-      <TouchableOpacity
-        style={styles.dismissButton}
-        onPress={handleDismiss}
-        accessibilityRole="button"
-        accessibilityLabel={t('emergency.dismiss')}
-      >
+      <Text style={styles.instructionsActive}>
+        {t('emergency.instructions.rockets')}
+      </Text>
+
+      <TouchableOpacity style={styles.dismissButton} onPress={handleDismiss}>
         <Text style={styles.dismissText}>{t('emergency.dismiss')}</Text>
       </TouchableOpacity>
     </Animated.View>
@@ -198,23 +257,92 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     zIndex: 999,
-    backgroundColor: '#B71C1C',    // deep red
-    paddingTop: 52,                 // clear the status bar
+    paddingTop: 52,
     paddingBottom: 18,
     paddingHorizontal: 20,
     alignItems: 'center',
-    // Shadow so it floats above the map
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.5,
     shadowRadius: 12,
     elevation: 20,
   },
-  pulseBg: {
-    backgroundColor: '#E53935',
-    borderRadius: 0,
+
+  // ── Preliminary ────────────────────────────────────────────────────
+  bannerPreliminary: {
+    backgroundColor: '#E65100',  // deep amber/orange
   },
-  title: {
+  titlePreliminary: {
+    fontSize: 24,
+    fontWeight: '900',
+    color: '#FFFFFF',
+    letterSpacing: 0.5,
+  },
+  subtitlePreliminary: {
+    fontSize: 15,
+    color: '#FFE0B2',
+    marginTop: 2,
+    fontWeight: '600',
+  },
+  threatPreliminary: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#FFF9C4',
+    marginTop: 6,
+    textAlign: 'center',
+  },
+  regionsPreliminary: {
+    fontSize: 13,
+    color: '#FFCC80',
+    marginTop: 2,
+    textAlign: 'center',
+  },
+  countdownBoxPreliminary: {
+    alignItems: 'center',
+    marginTop: 10,
+  },
+  countdownLabel: {
+    color: '#FFE0B2',
+    fontSize: 12,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  countdownPreliminary: {
+    fontSize: 56,
+    fontWeight: '900',
+    color: '#FFFFFF',
+    letterSpacing: -2,
+    lineHeight: 60,
+  },
+  instructionsPreliminary: {
+    fontSize: 13,
+    color: '#FFE0B2',
+    marginTop: 8,
+    textAlign: 'center',
+    lineHeight: 18,
+  },
+  dismissButtonPreliminary: {
+    marginTop: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.4)',
+    borderRadius: 8,
+    paddingVertical: 6,
+    paddingHorizontal: 16,
+  },
+  dismissTextPreliminary: {
+    color: 'rgba(255,255,255,0.6)',
+    fontSize: 12,
+  },
+
+  // ── Active ─────────────────────────────────────────────────────────
+  bannerActive: {
+    backgroundColor: '#B71C1C',  // deep red
+  },
+  pulseBgActive: {
+    backgroundColor: '#E53935',
+  },
+  titleActive: {
     fontSize: 28,
     fontWeight: '900',
     color: '#FFFFFF',
@@ -223,44 +351,88 @@ const styles = StyleSheet.create({
     textShadowOffset: { width: 1, height: 1 },
     textShadowRadius: 2,
   },
-  threat: {
+  subtitleActive: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#FFCDD2',
+    marginTop: 2,
+  },
+  threatActive: {
     fontSize: 20,
     fontWeight: '700',
     color: '#FFEB3B',
     marginTop: 4,
+    textAlign: 'center',
   },
-  regions: {
+  regionsActive: {
     fontSize: 13,
     color: '#EF9A9A',
     marginTop: 2,
     textAlign: 'center',
   },
-  countdown: {
-    fontSize: 42,
+  countdownActive: {
+    fontSize: 64,
     fontWeight: '900',
-    marginTop: 10,
-    marginBottom: 6,
-    letterSpacing: -1,
-    // color is set dynamically above
+    marginTop: 8,
+    letterSpacing: -2,
+    lineHeight: 68,
+    // color is set dynamically
   },
+  countdownActiveLabel: {
+    fontSize: 12,
+    color: 'rgba(255,255,255,0.7)',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginTop: -4,
+    marginBottom: 6,
+  },
+  instructionsActive: {
+    fontSize: 13,
+    color: '#FFCDD2',
+    marginTop: 6,
+    textAlign: 'center',
+    lineHeight: 18,
+  },
+
+  // ── Take cover (t=0) ───────────────────────────────────────────────
+  bannerTakeCover: {
+    backgroundColor: '#000000',
+    justifyContent: 'center',
+    minHeight: 200,
+  },
+  pulseBgBlack: {
+    backgroundColor: '#D32F2F',
+  },
+  takeCoverText: {
+    fontSize: 36,
+    fontWeight: '900',
+    color: '#FF1744',
+    textAlign: 'center',
+    letterSpacing: 1,
+    textShadowColor: 'rgba(255,23,68,0.4)',
+    textShadowOffset: { width: 0, height: 0 },
+    textShadowRadius: 12,
+  },
+
+  // ── Shared ─────────────────────────────────────────────────────────
   shelterBox: {
     backgroundColor: 'rgba(0,0,0,0.25)',
     borderRadius: 10,
     paddingVertical: 8,
     paddingHorizontal: 16,
-    marginTop: 4,
+    marginTop: 6,
     alignItems: 'center',
     width: '100%',
   },
   shelterLabel: {
     color: '#FFFFFF',
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: '700',
     textAlign: 'center',
   },
   shelterEta: {
     color: '#FFCCBC',
-    fontSize: 18,
+    fontSize: 17,
     fontWeight: '800',
     marginTop: 2,
   },

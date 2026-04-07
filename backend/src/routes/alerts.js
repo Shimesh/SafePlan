@@ -44,9 +44,14 @@ router.post('/mock', (req, res) => {
     return res.status(500).json({ success: false, error: 'Socket.io not initialized.' });
   }
 
-  const { threatOrigin = 'Iran', timeToImpact = 90 } = req.body || {};
+  const {
+    threatOrigin      = 'ירי רקטות — עזה',
+    timeToImpact      = 90,
+    alertType         = 'active',
+    warningTimeSeconds = 0,
+  } = req.body || {};
 
-  injectMockAlert(_io, String(threatOrigin), Number(timeToImpact));
+  injectMockAlert(_io, String(threatOrigin), Number(timeToImpact), alertType, Number(warningTimeSeconds));
 
   res.json({
     success: true,
