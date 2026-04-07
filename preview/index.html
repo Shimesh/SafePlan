@@ -297,6 +297,28 @@
       font-size:17px;cursor:pointer;display:flex;align-items:center;justify-content:center;
       box-shadow:0 2px 14px rgba(0,0,0,.15);transition:background .15s;}
     #voiceBtn.listening{background:#FF5252 !important;animation:pulse .6s infinite alternate;}
+    /* TTS nav toggle */
+    #ttsBtn{position:absolute;bottom:100px;left:58px;z-index:500;width:40px;height:40px;
+      background:#fff;border:none;border-radius:12px;font-size:18px;cursor:pointer;
+      display:none;align-items:center;justify-content:center;box-shadow:0 2px 10px rgba(0,0,0,.2);}
+    #ttsBtn.active{background:#1565C0;color:#fff;}
+    #ttsBtn.on{display:flex;}
+    /* Pikud HaOref instructions */
+    .pikud-wrap{margin:4px 12px 2px;flex-shrink:0;}
+    .pikud-toggle{background:rgba(183,28,28,.15);border:1px solid rgba(183,28,28,.3);border-radius:12px;
+      padding:8px 13px;display:flex;align-items:center;justify-content:space-between;cursor:pointer;}
+    .pikud-toggle-lbl{font-size:12px;font-weight:700;color:#FF8A80;}
+    .pikud-toggle-arrow{font-size:10px;color:#FF8A80;transition:transform .25s;}
+    .pikud-toggle-arrow.open{transform:rotate(180deg);}
+    .pikud-collapse{overflow:hidden;max-height:0;transition:max-height .35s ease;}
+    .pikud-collapse.open{max-height:600px;}
+    .pikud-scenario{background:rgba(255,255,255,.05);border-radius:10px;margin-top:5px;overflow:hidden;}
+    .pikud-sc-hdr{padding:8px 11px;font-size:12px;font-weight:700;color:#FFAB40;cursor:pointer;
+      display:flex;align-items:center;gap:8px;border-bottom:1px solid rgba(255,255,255,.05);}
+    .pikud-sc-body{padding:8px 11px;font-size:11px;color:#90A4AE;line-height:1.6;display:none;}
+    .pikud-sc-body.open{display:block;}
+    .pikud-step{display:flex;gap:6px;margin-bottom:3px;}
+    .pikud-step-num{color:#69F0AE;font-weight:700;flex-shrink:0;}
 
     /* ── NAV STEPS PANEL ── */
     #navStepsPanel{position:absolute;top:100px;left:10px;right:10px;z-index:588;
@@ -370,6 +392,17 @@
     <div class="home-section">
       <div class="home-sec-title" id="alertsSectionTitle">התראות פיקוד העורף</div>
       <div id="recentAlerts"></div>
+    </div>
+
+    <!-- Pikud HaOref instructions -->
+    <div class="pikud-wrap">
+      <div class="pikud-toggle" onclick="togglePikud()">
+        <span class="pikud-toggle-lbl">🛡 הנחיות פיקוד העורף</span>
+        <span class="pikud-toggle-arrow" id="pikudArrow">▼</span>
+      </div>
+      <div class="pikud-collapse" id="pikudCollapse">
+        <div id="pikudList"></div>
+      </div>
     </div>
 
     <!-- Checklist — collapsible -->
@@ -456,6 +489,8 @@
       <button class="map-btn" title="מיקומי" onclick="goToUser()" id="locBtn">📍</button>
       <button class="map-btn" id="layerBtn" title="שנה שכבה" onclick="toggleLayer()">🛰</button>
     </div>
+    <!-- TTS toggle — shown during active nav -->
+    <button id="ttsBtn" title="ניווט קולי" onclick="toggleTTS()">🔊</button>
 
     <!-- Start navigation button (shown after route calculated) -->
     <button id="startNavBtn" onclick="enterLiveNav()">▶ צא לדרך</button>
@@ -872,22 +907,51 @@ async function doHomeShelterSearch() {
   } catch(e) {}
 }
 
+let _homeShResults = [];
+let _homeShFrom = null;
+
 function renderHomeShResults(shelters, fromCoord) {
   const box = document.getElementById('homeShResults');
+  _homeShResults = shelters;
+  _homeShFrom = fromCoord;
   box.textContent = '';
   if (!shelters.length) { box.style.display='none'; return; }
-  shelters.slice(0, 5).forEach(s => {
+  shelters.slice(0, 5).forEach((s, i) => {
     const dm = s.distanceMeters || haversineM(fromCoord[0], fromCoord[1], s.lat, s.lng);
     const distStr = dm < 1000 ? Math.round(dm)+'מ׳' : (dm/1000).toFixed(1)+'ק"מ';
     const el = document.createElement('div');
     el.className = 'home-sh-item';
-    el.innerHTML = `<span>🛡</span><span style="flex:1">${s.name}</span><span style="color:#1565C0;font-weight:700;">${distStr}</span>`;
-    el.onclick = () => {
-      if (homeMap) homeMap.setView([s.lat, s.lng], 13, {animate:true});
-    };
+    el.style.flexDirection = 'column';
+    el.style.alignItems = 'flex-start';
+    el.style.gap = '4px';
+    el.innerHTML = `
+      <div style="display:flex;align-items:center;gap:8px;width:100%;">
+        <span>🛡</span>
+        <span style="flex:1;color:#fff;font-weight:600;">${s.name}</span>
+        <span style="color:#1565C0;font-weight:700;">${distStr}</span>
+      </div>
+      ${s.address ? `<div style="font-size:10px;color:#546E7A;padding-right:20px;">${s.address}</div>` : ''}
+      <button onclick="navigateToShelterFromHome(${i})" style="
+        background:linear-gradient(135deg,#2E7D32,#43A047);color:#fff;border:none;
+        border-radius:8px;padding:5px 12px;font-size:11px;font-weight:700;cursor:pointer;
+        width:100%;font-family:inherit;margin-top:2px;">
+        ▶ נווט למקלט זה
+      </button>`;
+    el.addEventListener('click', e => {
+      if (e.target.tagName === 'BUTTON') return;
+      if (homeMap) homeMap.setView([s.lat, s.lng], 14, {animate:true});
+    });
     box.appendChild(el);
   });
   box.style.display = 'block';
+}
+
+function navigateToShelterFromHome(idx) {
+  const s = _homeShResults[idx];
+  if (!s) return;
+  // Go to map screen and route directly
+  goMap();
+  setTimeout(() => routeTo([s.lat, s.lng], s.name), 600);
 }
 
 // ─── VOICE INPUT ──────────────────────────────────────────────────────────
@@ -916,12 +980,22 @@ function startVoiceSearch() {
 }
 
 // ─── VOICE TTS ────────────────────────────────────────────────────────────
+let ttsEnabled = true;
+
+function toggleTTS() {
+  ttsEnabled = !ttsEnabled;
+  const btn = document.getElementById('ttsBtn');
+  btn.classList.toggle('active', ttsEnabled);
+  btn.textContent = ttsEnabled ? '🔊' : '🔇';
+  if (!ttsEnabled && window.speechSynthesis) window.speechSynthesis.cancel();
+}
+
 function speak(text) {
-  if (!window.speechSynthesis || !text) return;
+  if (!ttsEnabled || !window.speechSynthesis || !text) return;
   window.speechSynthesis.cancel();
   const u = new SpeechSynthesisUtterance(text);
   u.lang = SPEECH_LANG[lang] || 'he-IL';
-  u.rate = 0.95;
+  u.rate = 1.0;
   window.speechSynthesis.speak(u);
 }
 
@@ -956,9 +1030,85 @@ function toggleChecklist() {
   arrow.classList.toggle('open', isOpen);
 }
 
+// ─── PIKUD HAOREF INSTRUCTIONS (must be before init calls) ───────────────
+const PIKUD_SCENARIOS = [
+  { icon:'🚀', title:'ירי רקטות וטילים', steps:[
+    'כניסה מיידית למרחב המוגן (מקלט / ממ"ד / חדר מדרגות פנימי)',
+    'שהייה במרחב המוגן 10 דקות לפחות לאחר תום האזעקה',
+    'בחוץ — שכב על הקרקע, כסה ראש בידיים, המתן 10 דקות',
+    'ברכב — עצור בצד, צא, שכב ליד הרכב',
+    'אין לחזור לנסיעה עד להנחיית פיקוד העורף',
+  ]},
+  { icon:'✈️', title:'חדירת כלי טיס עוין / כטב"מ', steps:[
+    'כניסה למרחב מוגן כמו בירי רקטות',
+    'אל תתקרב לחפצים חשודים שנפלו',
+    'דווח לרשויות על כל חפץ חשוד',
+    'המתן להנחיות פיקוד העורף לפני יציאה',
+  ]},
+  { icon:'☢️', title:'חומר רדיואקטיבי / חומרים מסוכנים', steps:[
+    'כניסה לבניין — אטום חלונות ודלתות בסדינים לחים',
+    'כבה מיזוג ואוורור',
+    'אל תשתמש במים מהברז',
+    'המתן להנחיות מדויקות ברדיו',
+    'אין לצאת ללא הוראה מפורשת',
+  ]},
+  { icon:'🌊', title:'צונאמי', steps:[
+    'עבור לאלתר לקומות גבוהות (מעל 20 מ\' מפני הים)',
+    'אין לחכות לראות גל — אם הים נסוג בפתאומיות, ברח',
+    'הרחק מחופים ונהרות עד לביטול ההתראה',
+    'אל תחזור לחוף עד להנחיית הרשויות',
+  ]},
+  { icon:'💥', title:'רעידת אדמה', steps:[
+    'תוך הרעידה: שב-כסה-אחוז (Drop-Cover-Hold)',
+    'אל תברח החוצה בזמן הרעידה',
+    'לאחר הרעידה: בדוק עצמך ואחרים לפצעים',
+    'צא מהבניין בזהירות — היזהר מנפילות נוספות',
+    'הרחק ממבנים פגועים ועמודי חשמל',
+  ]},
+  { icon:'🔫', title:'פיגוע טרור', steps:[
+    'ברח מהמקום במהירות אם אפשר',
+    'התחבא — מצא מחסה יציב, נעל דלתות',
+    'הדבק — כבה טלפון לרטט, אל תנוע',
+    'התקשר 100 (משטרה) רק כשבטוח לחלוטין',
+    'שמע והישמע להוראות כוחות הביטחון',
+  ]},
+];
+
+function renderPikudInstructions() {
+  const list = document.getElementById('pikudList');
+  if (!list) return;
+  list.textContent = '';
+  PIKUD_SCENARIOS.forEach(sc => {
+    const wrap = document.createElement('div');
+    wrap.className = 'pikud-scenario';
+    const hdr = document.createElement('div');
+    hdr.className = 'pikud-sc-hdr';
+    hdr.innerHTML = `<span>${sc.icon}</span><span>${sc.title}</span><span style="margin-right:auto;font-size:10px;color:#546E7A;">▼</span>`;
+    const body = document.createElement('div');
+    body.className = 'pikud-sc-body';
+    sc.steps.forEach((step, j) => {
+      body.innerHTML += `<div class="pikud-step"><span class="pikud-step-num">${j+1}.</span><span>${step}</span></div>`;
+    });
+    hdr.onclick = () => {
+      body.classList.toggle('open');
+      hdr.querySelector('span:last-child').textContent = body.classList.contains('open') ? '▲' : '▼';
+    };
+    wrap.appendChild(hdr); wrap.appendChild(body);
+    list.appendChild(wrap);
+  });
+}
+
+function togglePikud() {
+  const col = document.getElementById('pikudCollapse');
+  const arrow = document.getElementById('pikudArrow');
+  col.classList.toggle('open');
+  arrow.classList.toggle('open', col.classList.contains('open'));
+}
+
 renderChecklist();
 buildLangMenu();
 renderRecentAlerts();
+renderPikudInstructions();
 // Init home map + GPS after DOM settles
 setTimeout(() => { initHomeMap(); initHomeGPS(); }, 100);
 // Shelter panel swipe
@@ -1272,9 +1422,15 @@ let savedRoute=null;
 
 function startNav(result, destName, isEmergency=false) {
   stopNav();
-  navCoords=result.coords; navSteps=result.steps;
-  navCoordIdx=0; navStepIdx=0;
+  navCoords=result.coords; navSteps=result.steps||[];
+  navCoordIdx=0; navStepIdx=0; lastSpokenStep=-1; spokenApproach=-1;
   navTotalDist=result.distance; navTotalDuration=result.duration;
+
+  // Show TTS toggle button
+  const ttsBtn=document.getElementById('ttsBtn');
+  ttsBtn.classList.add('on');
+  ttsBtn.classList.toggle('active', ttsEnabled);
+  ttsBtn.textContent = ttsEnabled ? '🔊' : '🔇';
 
   const bar=document.getElementById('navBar');
   bar.classList.add('on');
@@ -1314,10 +1470,12 @@ function startNav(result, destName, isEmergency=false) {
     if (navStepsOpen) renderNavStepsPanel();
     // Advance step index
     const progress=navCoordIdx/navCoords.length;
-    let cum=0;
-    for (let i=0;i<navSteps.length;i++) {
-      cum+=(navSteps[i]?.distance||0)/navTotalDist;
-      if (progress<=cum) { navStepIdx=i; break; }
+    if (navSteps.length > 0) {
+      let cum=0;
+      for (let i=0;i<navSteps.length;i++) {
+        cum+=(navSteps[i]?.distance||0)/Math.max(1,navTotalDist);
+        if (progress<=cum) { navStepIdx=i; break; }
+      }
     }
     updateNavBar();
     // Refresh nearby shelters every ~15% progress
@@ -1326,6 +1484,8 @@ function startNav(result, destName, isEmergency=false) {
 }
 
 let lastSpokenStep = -1;
+let spokenApproach = -1; // track 200m approach announcement
+
 function updateNavBar() {
   const step=navSteps[navStepIdx];
   const progress=navCoordIdx/Math.max(1,navCoords.length);
@@ -1334,15 +1494,40 @@ function updateNavBar() {
   document.getElementById('navArrow').textContent=getArrow(step);
   const stepName=step?.name||(lang==='he'?'המשך ישר':'Continue');
   document.getElementById('navStep').textContent=stepName;
-  document.getElementById('navDist').textContent=step?.distance?formatDist(step.distance):formatDist(remDist);
+
+  // Distance to next maneuver (from current nav coord to step endpoint)
+  let distToManeuver = step?.distance || remDist;
+  // Estimate metres remaining to current step endpoint
+  const stepsUpToNow = navSteps.slice(0, navStepIdx);
+  const distCoveredInSteps = stepsUpToNow.reduce((s,st)=>s+(st?.distance||0),0);
+  const distCoveredTotal = navTotalDist * progress;
+  distToManeuver = Math.max(0, distCoveredInSteps + (step?.distance||0) - distCoveredTotal);
+
+  document.getElementById('navDist').textContent=formatDist(distToManeuver||remDist);
   document.getElementById('navEta').textContent=remSecs>10?(t.eta+Math.ceil(remSecs/60)+' '+t.min):'';
   document.getElementById('navProgressFill').style.width=(progress*100)+'%';
-  // TTS: speak new step when it changes
-  if (navStepIdx !== lastSpokenStep && step) {
+
+  // TTS: only speak when within 250m of next maneuver (not immediately on step change)
+  if (step && navStepIdx !== lastSpokenStep && distToManeuver <= 250) {
     lastSpokenStep = navStepIdx;
-    const arrow = getArrow(step);
-    const dist = step.distance ? formatDist(step.distance) : '';
-    speak((dist ? dist + ' — ' : '') + stepName);
+    const distLabel = distToManeuver > 30 ? 'בעוד '+formatDist(distToManeuver)+' — ' : '';
+    const arrow = step.maneuver?.type;
+    const turnWord = { 'turn-right':lang==='he'?'פנה ימינה':'turn right',
+      'turn-left':lang==='he'?'פנה שמאלה':'turn left',
+      'turn-sharp-right':lang==='he'?'פנייה חדה ימינה':'sharp right',
+      'turn-sharp-left':lang==='he'?'פנייה חדה שמאלה':'sharp left',
+      'roundabout':lang==='he'?'כניסה לכיכר':'roundabout',
+      'arrive':lang==='he'?'הגעת ליעד':'you have arrived',
+    }[arrow] || (lang==='he'?'המשך ישר':'continue');
+    speak(distLabel + turnWord + (stepName && stepName !== 'המשך ישר' && stepName !== 'Continue' ? ' ל' + stepName : ''));
+  }
+  // 500m advance warning for sharp turns
+  if (step && spokenApproach !== navStepIdx && distToManeuver <= 500 && distToManeuver > 250) {
+    const type = step.maneuver?.type || '';
+    if (type.includes('turn') || type === 'roundabout') {
+      spokenApproach = navStepIdx;
+      speak((lang==='he'?'עוד 500 מטר — ':' in 500m — ') + (step.name||''));
+    }
   }
 }
 
@@ -1350,6 +1535,8 @@ function stopNav() {
   clearInterval(navInterval); navInterval=null;
   document.getElementById('navBar').classList.remove('on','em-mode');
   document.getElementById('navProgress').style.display='none';
+  document.getElementById('ttsBtn').classList.remove('on');
+  if (window.speechSynthesis) window.speechSynthesis.cancel();
   if (liveNavActive) exitLiveNav();
 }
 
@@ -1602,15 +1789,19 @@ async function confirmShelter() {
 
   placeShelterMarkers(sheltersData, s.id);
   if (routeLayer) map.fitBounds(routeLayer.getBounds(), {padding:[80,60]});
+  // Auto-enter first-person live nav for emergency
+  setTimeout(() => { if (!liveNavActive) enterLiveNav(); }, 1200);
 }
 
 function rejectShelter() {
   document.getElementById('shelterPopup').classList.remove('on');
-  document.getElementById('shPanel').style.display = 'block';
+  document.getElementById('shPanel').style.display = '';
   pendingShelter = null;
   // Restore original route if it existed
   if (savedRoute && savedRoute.dest) {
     routeTo(savedRoute.dest, savedRoute.label);
+  } else {
+    loadShelters();
   }
 }
 
@@ -1747,6 +1938,7 @@ document.addEventListener('click', e => {
     document.getElementById('navBarChevron')?.classList.remove('open');
   }
 });
+
 
 // PWA — register service worker
 if ('serviceWorker' in navigator) {
